@@ -12,7 +12,7 @@ from flask import Flask, Response, render_template, request, jsonify
 import google.cloud.firestore as firestore
 
 from enrichment import hubspot_client
-from enrichment import tier1, tier2, tier3
+from enrichment import tier0, tier1, tier2, tier3
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -65,6 +65,31 @@ def process_company(company: dict) -> dict:
     emit({"type": "company_start", "id": cid, "name": name, "domain": domain})
     log_terminal(f"── Starting: {name} ({domain or 'no domain'})")
 
+    total_cost = 0.0
+
+    # --- Tier 0: Pre-flight domain validation ---
+    emit({"type": "tier_attempt", "id": cid, "tier": 0,
+          "method": "domain reachability · DuckDuckGo name search"})
+    log_terminal(f"[T0] Checking domain reachability: {url or domain or 'no URL'}")
+
+    t0 = tier0.check(company)
+
+    if t0.get("_skip"):
+        reason = t0.get("skip_reason", "unknown")
+        log_terminal(f"[T0] ✗ Skipping — {reason}", "error")
+        log_terminal(f"[T0] Setting modality=Other, brand_tier=blank (no tokens spent)", "warn")
+        return {"modality": "Other", "brand_tier": "",
+                "modality_confidence": 0, "brand_tier_confidence": 0,
+                "cost_usd": 0.0, "tier": 0, "method": "skipped_invalid_domain",
+                "id": cid}
+
+    if t0.get("_domain_corrected"):
+        log_terminal(f"[T0] Domain unreachable — found via search: {t0['domain']} "
+                     f"(was: {t0.get('_original_domain', domain)})", "warn")
+        company = t0  # Use corrected domain for all downstream tiers
+    else:
+        log_terminal(f"[T0] ✓ Domain reachable — proceeding", "success")
+
     # --- Tier 1: Free, deterministic ---
     emit({"type": "tier_attempt", "id": cid, "tier": 1,
           "method": "known brand lookup · keyword match · location scrape"})
@@ -80,6 +105,7 @@ def process_company(company: dict) -> dict:
         if mc >= CONFIDENCE_THRESHOLD and tc >= CONFIDENCE_THRESHOLD:
             log_terminal(f"[T1] ✓ Both ≥{CONFIDENCE_THRESHOLD}% — resolved at Tier 1", "success")
             result1["id"] = cid
+            result1["cost_usd"] = 0.0
             return result1
         else:
             log_terminal(f"[T1] Confidence too low (need {CONFIDENCE_THRESHOLD}% each) — escalating to T2", "warn")
@@ -102,9 +128,11 @@ def process_company(company: dict) -> dict:
         tc = result2.get("brand_tier_confidence", 0)
         log_terminal(f"[T2] Gemini → {result2.get('modality')} ({mc}%) · "
                      f"{result2.get('brand_tier')} ({tc}%)")
+        total_cost += result2.get("cost_usd", 0.0)
         if mc >= CONFIDENCE_THRESHOLD and tc >= CONFIDENCE_THRESHOLD:
             log_terminal(f"[T2] ✓ Both ≥{CONFIDENCE_THRESHOLD}% — resolved at Tier 2", "success")
             result2["id"] = cid
+            result2["cost_usd"] = total_cost
             return result2
         else:
             reasoning = result2.get("reasoning", "")
@@ -120,6 +148,7 @@ def process_company(company: dict) -> dict:
     log_terminal(f"[T3] Sending to Claude Haiku for final classification...")
 
     result3 = tier3.enrich(company, previous=result2 or result1)
+    total_cost += result3.get("cost_usd", 0.0)
 
     mc = result3.get("modality_confidence", 0)
     tc = result3.get("brand_tier_confidence", 0)
@@ -132,6 +161,7 @@ def process_company(company: dict) -> dict:
                      f"setting modality=Other, brand_tier=blank", "error")
 
     result3["id"] = cid
+    result3["cost_usd"] = total_cost
     return result3
 
 
@@ -152,6 +182,7 @@ def run_batch(companies: list[dict], batch_id: str):
 
     enriched_count = 0
     failed_count = 0
+    total_cost = 0.0
 
     for i, company in enumerate(companies):
         if _stop_flag.is_set():
@@ -172,6 +203,8 @@ def run_batch(companies: list[dict], batch_id: str):
                 result = process_company(company)
                 modality = result.get("modality", "Other")
                 brand_tier = result.get("brand_tier") or ""
+                cost = result.get("cost_usd", 0.0)
+                total_cost += cost
 
                 # Write back to HubSpot
                 ok = hubspot_client.write_enrichment(cid, modality, brand_tier)
@@ -193,6 +226,7 @@ def run_batch(companies: list[dict], batch_id: str):
                       "domain": company.get("domain", ""),
                       "modality": modality, "brand_tier": brand_tier,
                       "tier": result.get("tier"), "method": result.get("method"),
+                      "cost_usd": round(cost, 6),
                       "hubspot_written": ok})
                 enriched_count += 1
 
@@ -204,14 +238,16 @@ def run_batch(companies: list[dict], batch_id: str):
 
         # Progress event
         emit({"type": "progress", "current": i + 1, "total": len(companies),
-              "enriched": enriched_count, "failed": failed_count})
+              "enriched": enriched_count, "failed": failed_count,
+              "total_cost": round(total_cost, 6)})
 
         batch_ref.update({"enriched": enriched_count, "failed": failed_count})
         time.sleep(0.3)  # Polite rate limiting
 
     batch_ref.update({"status": "complete", "completed_at": firestore.SERVER_TIMESTAMP})
     emit({"type": "batch_done", "total": len(companies),
-          "enriched": enriched_count, "failed": failed_count})
+          "enriched": enriched_count, "failed": failed_count,
+          "total_cost": round(total_cost, 6)})
 
 
 # ---------------------------------------------------------------------------

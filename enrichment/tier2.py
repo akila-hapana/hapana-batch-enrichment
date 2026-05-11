@@ -20,6 +20,12 @@ APOLLO_KEY         = os.environ.get("APOLLO_API_KEY", "")
 SA_KEY_JSON        = os.environ.get("GCP_SERVICE_ACCOUNT_KEY", "")
 GOOGLE_MAPS_KEY    = os.environ.get("GOOGLE_PLACES_API_KEY", "")
 
+# Gemini 1.5 Flash pricing (per token)
+_GEMINI_IN  = 0.075 / 1_000_000
+_GEMINI_OUT = 0.30  / 1_000_000
+# Google Maps: Find Place ($0.017) + Text Search ($0.032)
+_MAPS_COST  = 0.049
+
 VALID_MODALITIES = [
     "Boxing", "Dance", "Education", "EMS", "Golf", "Gym", "HIIT/Functional",
     "Injury Prevention", "Martial Arts", "Other", "Pilates", "Spin/Indoor Cycle",
@@ -83,7 +89,11 @@ def _call_gemini(name: str, context: str) -> dict:
             },
             timeout=20,
         )
-        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        resp = r.json()
+        text = resp["candidates"][0]["content"]["parts"][0]["text"]
+        usage = resp.get("usageMetadata", {})
+        cost = (usage.get("promptTokenCount", 0) * _GEMINI_IN +
+                usage.get("candidatesTokenCount", 0) * _GEMINI_OUT)
         m = re.search(r'\{.*\}', text, re.DOTALL)
         if m:
             result = json.loads(m.group())
@@ -96,6 +106,7 @@ def _call_gemini(name: str, context: str) -> dict:
                 "brand_tier_confidence": int(result.get("brand_tier_confidence", 0)),
                 "location_count": result.get("location_count"),
                 "reasoning": result.get("reasoning", ""),
+                "_cost": cost,
             }
     except Exception:
         pass
@@ -237,6 +248,7 @@ def enrich(company: dict, tier1_result: dict | None = None) -> dict | None:
 
     # Google Maps location count
     maps_count = _google_maps_location_count(name, domain)
+    maps_cost = _MAPS_COST if (GOOGLE_MAPS_KEY and maps_count is not None) else 0.0
     if maps_count is not None:
         parts.append(f"Google Maps search results for '{name}': {maps_count} listings found")
         if maps_count >= 11:
@@ -265,6 +277,7 @@ def enrich(company: dict, tier1_result: dict | None = None) -> dict | None:
 
     mod_conf = result.get("modality_confidence", 0)
     tier_conf = result.get("brand_tier_confidence", 0)
+    cost = result.get("_cost", 0.0) + maps_cost
 
     # Pass if both >= 90
     if mod_conf >= 90 and tier_conf >= 90 and result.get("modality"):
@@ -275,6 +288,7 @@ def enrich(company: dict, tier1_result: dict | None = None) -> dict | None:
             "brand_tier_confidence": tier_conf,
             "location_count": result.get("location_count"),
             "reasoning": result.get("reasoning", ""),
+            "cost_usd": cost,
             "tier": 2,
             "method": "gemini_flash",
         }
@@ -287,4 +301,5 @@ def enrich(company: dict, tier1_result: dict | None = None) -> dict | None:
         "modality_confidence": mod_conf,
         "brand_tier_confidence": tier_conf,
         "location_count": result.get("location_count"),
+        "cost_usd": cost,
     }

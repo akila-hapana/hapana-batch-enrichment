@@ -82,7 +82,7 @@
     /* ── Stats row ── */
     .stats-row {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(5, 1fr);
       gap: 16px;
       padding: 20px 24px 0;
     }
@@ -93,25 +93,29 @@
       padding: 18px 20px;
       box-shadow: var(--shadow-sm);
     }
-    .stat-card.blue  { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-color: #bfdbfe; }
-    .stat-card.green { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-color: #bbf7d0; }
-    .stat-card.amber { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-color: #fde68a; }
-    .stat-card.slate { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-color: #e2e8f0; }
+    .stat-card.blue   { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-color: #bfdbfe; }
+    .stat-card.green  { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-color: #bbf7d0; }
+    .stat-card.amber  { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-color: #fde68a; }
+    .stat-card.slate  { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-color: #e2e8f0; }
+    .stat-card.violet { background: linear-gradient(135deg, #faf5ff 0%, #ede9fe 100%); border-color: #ddd6fe; }
     .stat-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; }
-    .blue  .stat-label { color: #1d4ed8; }
-    .green .stat-label { color: #15803d; }
-    .amber .stat-label { color: #b45309; }
-    .slate .stat-label { color: #475569; }
+    .blue   .stat-label { color: #1d4ed8; }
+    .green  .stat-label { color: #15803d; }
+    .amber  .stat-label { color: #b45309; }
+    .slate  .stat-label { color: #475569; }
+    .violet .stat-label { color: #6d28d9; }
     .stat-value { font-size: 28px; font-weight: 700; margin-top: 6px; line-height: 1; }
-    .blue  .stat-value { color: #1e40af; }
-    .green .stat-value { color: #166534; }
-    .amber .stat-value { color: #92400e; }
-    .slate .stat-value { color: #1e293b; }
+    .blue   .stat-value { color: #1e40af; }
+    .green  .stat-value { color: #166534; }
+    .amber  .stat-value { color: #92400e; }
+    .slate  .stat-value { color: #1e293b; }
+    .violet .stat-value { color: #5b21b6; }
     .stat-hint { font-size: 11px; margin-top: 4px; }
-    .blue  .stat-hint { color: #3b82f6; }
-    .green .stat-hint { color: #22c55e; }
-    .amber .stat-hint { color: #f59e0b; }
-    .slate .stat-hint { color: #94a3b8; }
+    .blue   .stat-hint { color: #3b82f6; }
+    .green  .stat-hint { color: #22c55e; }
+    .amber  .stat-hint { color: #f59e0b; }
+    .slate  .stat-hint { color: #94a3b8; }
+    .violet .stat-hint { color: #8b5cf6; }
 
     /* ── Progress card ── */
     .section {
@@ -223,11 +227,12 @@
       border-bottom: 1px solid var(--border);
       white-space: nowrap;
     }
-    thead th:nth-child(1) { width: 22%; }
-    thead th:nth-child(2) { width: 22%; }
-    thead th:nth-child(3) { width: 16%; }
+    thead th:nth-child(1) { width: 20%; }
+    thead th:nth-child(2) { width: 20%; }
+    thead th:nth-child(3) { width: 14%; }
     thead th:nth-child(4) { width: 16%; }
-    thead th:nth-child(5) { width: 24%; }
+    thead th:nth-child(5) { width: 18%; }
+    thead th:nth-child(6) { width: 12%; }
 
     tbody tr { border-bottom: 1px solid var(--border-soft); transition: background .1s; }
     tbody tr:last-child { border-bottom: none; }
@@ -430,6 +435,11 @@
     <div class="stat-value" id="stat-failed">0</div>
     <div class="stat-hint" id="tier-hint">T1: 0 · T2: 0 · T3: 0</div>
   </div>
+  <div class="stat-card violet">
+    <div class="stat-label">Total Spend</div>
+    <div class="stat-value" id="stat-cost">$0.00</div>
+    <div class="stat-hint">estimated AI cost</div>
+  </div>
 </div>
 
 <!-- Progress + current company -->
@@ -450,6 +460,7 @@
         <div class="progress-bar-inner" id="progress-bar"></div>
       </div>
       <div class="tier-row" style="margin-top:12px;">
+        <span class="tier-badge t0">T0 <b id="t0-count">0</b></span>
         <span class="tier-badge t1">T1 <b id="t1-count">0</b></span>
         <span class="tier-badge t2">T2 <b id="t2-count">0</b></span>
         <span class="tier-badge t3">T3 <b id="t3-count">0</b></span>
@@ -567,10 +578,11 @@
             <th>Domain</th>
             <th>Brand Tier</th>
             <th>Modality</th>
+            <th>Est. Cost</th>
           </tr>
         </thead>
         <tbody id="enriched-tbody">
-          <tr><td colspan="5"><div class="empty-state">
+          <tr><td colspan="6"><div class="empty-state">
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
             Enriched companies will appear here
           </div></td></tr>
@@ -583,7 +595,7 @@
 
 <script>
   let pendingMap = {};
-  let tierCounts = {1:0,2:0,3:0};
+  let tierCounts = {0:0,1:0,2:0,3:0};
   let totalCompanies = 0;
   let eventSource = null;
   let allLogs = [];  // persist all log lines for popup
@@ -678,7 +690,7 @@
     return tr;
   }
 
-  function makeEnrichedRow(id, name, url, domain, brandTier, modality, tier) {
+  function makeEnrichedRow(id, name, url, domain, brandTier, modality, tier, costUsd) {
     const tr = document.createElement("tr");
     tr.id = `e-${id}`;
     tr.className = "row-in";
@@ -689,12 +701,20 @@
     const brandHtml = brandTier
       ? `<span class="brand-chip ${brandTier==="SMB"?"smb":brandTier==="MID"?"mid":"ent"}">${brandTier}</span>`
       : `<span class="blank">—</span>`;
+    const costHtml = tier === 0
+      ? `<span style="color:#94a3b8;font-size:11px;">Skipped</span>`
+      : tier === 1
+        ? `<span style="color:#15803d;font-weight:600;font-size:11px;">Free</span>`
+        : costUsd > 0
+          ? `<span style="color:#6d28d9;font-size:11px;font-weight:500;">$${costUsd.toFixed(4)}</span>`
+          : `<span class="blank">—</span>`;
     tr.innerHTML = `
       <td>${url ? `<a href="${url}" target="_blank" rel="noopener">${esc(name||"—")}</a>` : esc(name||"—")}</td>
       <td class="muted">${url ? `<a href="${url}" target="_blank" rel="noopener">${esc(disp)}</a>` : "—"}</td>
       <td class="em">${esc(domain||"—")}</td>
       <td>${brandHtml}${tierHtml}</td>
-      <td><span class="mod-badge ${modClass}">${esc(modality||"—")}</span></td>`;
+      <td><span class="mod-badge ${modClass}">${esc(modality||"—")}</span></td>
+      <td>${costHtml}</td>`;
     return tr;
   }
 
@@ -743,15 +763,14 @@
       const emptyRow = etbody.querySelector(".empty-state");
       if (emptyRow) emptyRow.closest("tr").remove();
 
-      const row = makeEnrichedRow(ev.id, ev.name, url, domain, ev.brand_tier, ev.modality, ev.tier);
+      const row = makeEnrichedRow(ev.id, ev.name, url, domain, ev.brand_tier, ev.modality, ev.tier, ev.cost_usd || 0);
       etbody.insertBefore(row, etbody.firstChild);
 
-      if (ev.tier > 0) {
-        tierCounts[ev.tier] = (tierCounts[ev.tier]||0) + 1;
-        document.getElementById("t1-count").textContent = tierCounts[1]||0;
-        document.getElementById("t2-count").textContent = tierCounts[2]||0;
-        document.getElementById("t3-count").textContent = tierCounts[3]||0;
-      }
+      tierCounts[ev.tier] = (tierCounts[ev.tier]||0) + 1;
+      document.getElementById("t0-count").textContent = tierCounts[0]||0;
+      document.getElementById("t1-count").textContent = tierCounts[1]||0;
+      document.getElementById("t2-count").textContent = tierCounts[2]||0;
+      document.getElementById("t3-count").textContent = tierCounts[3]||0;
 
       setCurrentCard(ev.name, url, domain, `Tier ${ev.tier}`, ev.modality, ev.brand_tier, true);
     }
@@ -772,15 +791,22 @@
       document.getElementById("stat-pending").textContent = pend;
       document.getElementById("pending-count").textContent = pend;
       document.getElementById("enriched-count").textContent = ev.enriched;
-      document.getElementById("tier-hint").textContent = `T1: ${tierCounts[1]||0} · T2: ${tierCounts[2]||0} · T3: ${tierCounts[3]||0}`;
+      document.getElementById("tier-hint").textContent = `T0: ${tierCounts[0]||0} · T1: ${tierCounts[1]||0} · T2: ${tierCounts[2]||0} · T3: ${tierCounts[3]||0}`;
+      if (ev.total_cost !== undefined) {
+        document.getElementById("stat-cost").textContent = `$${ev.total_cost.toFixed(4)}`;
+      }
     }
 
     if (ev.type === "batch_done") {
       document.getElementById("btn-start").disabled = false;
       document.getElementById("btn-stop").disabled = true;
       document.getElementById("proc-dot").className = "processing-dot done";
-      document.getElementById("batch-label").textContent = `Batch 1 — Done · ${ev.enriched}/${ev.total} enriched`;
-      addLog(new Date().toTimeString().slice(0,8), `✓ Batch complete — ${ev.enriched}/${ev.total} enriched`, "success");
+      const costStr = ev.total_cost !== undefined ? ` · $${ev.total_cost.toFixed(4)} total` : "";
+      document.getElementById("batch-label").textContent = `Batch 1 — Done · ${ev.enriched}/${ev.total} enriched${costStr}`;
+      addLog(new Date().toTimeString().slice(0,8), `✓ Batch complete — ${ev.enriched}/${ev.total} enriched${costStr}`, "success");
+      if (ev.total_cost !== undefined) {
+        document.getElementById("stat-cost").textContent = `$${ev.total_cost.toFixed(4)}`;
+      }
     }
 
     if (ev.type === "batch_stopped") {
@@ -835,8 +861,9 @@
 
   async function startBatch() {
     document.getElementById("btn-start").disabled = true;
-    tierCounts = {1:0,2:0,3:0};
-    document.getElementById("enriched-tbody").innerHTML = `<tr><td colspan="5"><div class="empty-state" style="padding:20px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Enriched companies will appear here</div></td></tr>`;
+    tierCounts = {0:0,1:0,2:0,3:0};
+    document.getElementById("stat-cost").textContent = "$0.00";
+    document.getElementById("enriched-tbody").innerHTML = `<tr><td colspan="6"><div class="empty-state" style="padding:20px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Enriched companies will appear here</div></td></tr>`;
     await fetch("/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
   }
 
