@@ -78,6 +78,7 @@ def _call_haiku(name: str, content: str) -> dict:
                 "brand_tier":            tier_val if tier_val in ("SMB", "MID", "Enterprise", "") else "",
                 "brand_tier_confidence": int(result.get("brand_tier_confidence", 0)),
                 "location_count":        result.get("location_count"),
+                "reasoning":             result.get("reasoning", ""),
                 "_cost":                 cost,
             }
     except Exception:
@@ -127,6 +128,7 @@ def enrich(t0: dict, previous: dict | None = None) -> dict:
         "brand_tier":            brand_tier,
         "modality_confidence":   mod_conf,
         "brand_tier_confidence": tier_conf,
+        "reasoning":             result.get("reasoning", ""),
         "cost_usd":              cost,
         "tier": 3, "method": "haiku_deep",
     }

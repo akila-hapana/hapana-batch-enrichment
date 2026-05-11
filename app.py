@@ -122,12 +122,25 @@ def process_company(company: dict) -> dict:
         tc = result1.get("brand_tier_confidence", 0)
         log_terminal(f"[T1] → {result1.get('modality')} ({mc}%) · "
                      f"{result1.get('brand_tier')} ({tc}%) via {result1.get('method')}")
+        # Build human-readable reasoning for T1 (rule-based, no AI reasoning returned)
+        if result1.get("method") == "known_brand":
+            result1["reasoning"] = (f"Exact domain match in the known brand database — "
+                                    f"modality and brand tier are pre-confirmed.")
+        else:
+            lc = result1.get("location_count")
+            mc_maps = t0.get("maps_count")
+            result1["reasoning"] = (f"Strong keyword match in company name or scraped website content. "
+                                    f"Location data: website={lc}, Google Maps={mc_maps} → {result1.get('brand_tier')}.")
         if mc >= CONFIDENCE_THRESHOLD and tc >= CONFIDENCE_THRESHOLD:
             log_terminal(f"[T1] ✓ Resolved at Tier 1", "success")
             result1["id"]           = cid
             result1["cost_usd"]     = total_cost
             result1["scrape_stage"] = scrape_stage
             result1["scrape_queued"]= scrape_queued
+            result1["maps_count"]   = t0.get("maps_count")
+            result1["apollo_industry"] = t0.get("apollo_industry", "")
+            if result1.get("location_count") is None:
+                result1["location_count"] = t0.get("location_count")
             return result1
         log_terminal(f"[T1] Confidence too low — escalating to T2", "warn")
     else:
@@ -152,6 +165,10 @@ def process_company(company: dict) -> dict:
             result2["cost_usd"]     = total_cost
             result2["scrape_stage"] = scrape_stage
             result2["scrape_queued"]= scrape_queued
+            result2["maps_count"]   = t0.get("maps_count")
+            result2["apollo_industry"] = t0.get("apollo_industry", "")
+            if result2.get("location_count") is None:
+                result2["location_count"] = t0.get("location_count")
             return result2
         log_terminal(f"[T2] Reasoning: {result2.get('reasoning','')}", "muted")
         log_terminal(f"[T2] Below threshold — escalating to T3", "warn")
@@ -177,10 +194,14 @@ def process_company(company: dict) -> dict:
     else:
         log_terminal(f"[T3] ✗ Below threshold — modality=Other, brand_tier=blank", "error")
 
-    result3["id"]           = cid
-    result3["cost_usd"]     = total_cost
-    result3["scrape_stage"] = scrape_stage
-    result3["scrape_queued"]= scrape_queued
+    result3["id"]              = cid
+    result3["cost_usd"]        = total_cost
+    result3["scrape_stage"]    = scrape_stage
+    result3["scrape_queued"]   = scrape_queued
+    result3["maps_count"]      = t0.get("maps_count")
+    result3["apollo_industry"] = t0.get("apollo_industry", "")
+    if result3.get("location_count") is None:
+        result3["location_count"] = t0.get("location_count")
     return result3
 
 
@@ -248,7 +269,13 @@ def run_batch(companies: list[dict], batch_id: str):
                       "cost_usd": round(cost, 6),
                       "scrape_stage": result.get("scrape_stage", 0),
                       "scrape_queued": result.get("scrape_queued", False),
-                      "hubspot_written": ok})
+                      "hubspot_written": ok,
+                      "reasoning": result.get("reasoning", ""),
+                      "modality_confidence": result.get("modality_confidence", 0),
+                      "brand_tier_confidence": result.get("brand_tier_confidence", 0),
+                      "location_count": result.get("location_count"),
+                      "maps_count": result.get("maps_count"),
+                      "apollo_industry": result.get("apollo_industry", "")})
                 enriched_count += 1
 
             except Exception as e:

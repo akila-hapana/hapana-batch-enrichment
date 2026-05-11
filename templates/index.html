@@ -396,6 +396,76 @@
     ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 99px; }
     .terminal-body::-webkit-scrollbar-thumb,
     .terminal-popup-body::-webkit-scrollbar-thumb { background: #30363d; }
+
+    /* ── Reasoning modal ── */
+    .reasoning-overlay {
+      display: none; position: fixed; inset: 0; z-index: 1000;
+      background: rgba(15,23,42,.55);
+      backdrop-filter: blur(6px);
+      align-items: center; justify-content: center;
+    }
+    .reasoning-overlay.open { display: flex; }
+    .reasoning-modal {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      width: 520px; max-width: 94vw;
+      box-shadow: 0 24px 80px rgba(0,0,0,.18);
+      overflow: hidden;
+    }
+    .rm-header {
+      padding: 16px 20px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex; align-items: flex-start; gap: 10px;
+    }
+    .rm-header-text { flex: 1; min-width: 0; }
+    .rm-company { font-size: 14px; font-weight: 700; color: var(--text);
+                  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rm-domain  { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .rm-close {
+      background: transparent; border: 1px solid var(--border);
+      color: var(--text-muted); width: 28px; height: 28px;
+      border-radius: var(--radius-sm); cursor: pointer;
+      font-size: 14px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .rm-close:hover { background: #f1f5f9; color: var(--text); }
+    .rm-body { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+    .rm-section {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .rm-section.highlight { border-color: #93c5fd; box-shadow: 0 0 0 3px #eff6ff; }
+    .rm-section-head {
+      padding: 10px 14px 8px;
+      display: flex; align-items: center; gap: 8px;
+      background: #f8f9fb;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .rm-section-label { font-size: 10px; font-weight: 700; text-transform: uppercase;
+                        letter-spacing: .07em; color: var(--text-muted); }
+    .rm-confidence {
+      margin-left: auto;
+      font-size: 11px; font-weight: 700;
+      padding: 2px 8px; border-radius: 99px;
+    }
+    .rm-conf-high { background: #f0fdf4; color: #15803d; }
+    .rm-conf-med  { background: #fffbeb; color: #b45309; }
+    .rm-conf-low  { background: #fef2f2; color: #dc2626; }
+    .rm-section-body { padding: 12px 14px; }
+    .rm-reasoning { font-size: 13px; color: var(--text); line-height: 1.6; }
+    .rm-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border-soft);
+      display: grid; grid-template-columns: 1fr 1fr;
+      gap: 6px 20px;
+      background: #f8f9fb;
+    }
+    .rm-meta { font-size: 11px; color: var(--text-muted); }
+    .rm-meta strong { color: var(--text); font-weight: 600; }
+    .clickable-badge { cursor: pointer; transition: opacity .1s; }
+    .clickable-badge:hover { opacity: .75; }
   </style>
 </head>
 <body>
@@ -605,9 +675,53 @@
 
 </div>
 
+<!-- Reasoning modal -->
+<div class="reasoning-overlay" id="reasoning-overlay" onclick="closeReasoningModal()">
+  <div class="reasoning-modal" onclick="event.stopPropagation()">
+    <div class="rm-header">
+      <div class="rm-header-text">
+        <div class="rm-company" id="rm-company">—</div>
+        <div class="rm-domain" id="rm-domain">—</div>
+      </div>
+      <button class="rm-close" onclick="closeReasoningModal()">✕</button>
+    </div>
+    <div class="rm-body">
+      <div class="rm-section" id="rm-modality-section">
+        <div class="rm-section-head">
+          <span class="rm-section-label">Modality</span>
+          <span id="rm-modality-badge"></span>
+          <span class="rm-confidence" id="rm-modality-conf"></span>
+        </div>
+        <div class="rm-section-body">
+          <div class="rm-reasoning" id="rm-modality-reason">—</div>
+        </div>
+      </div>
+      <div class="rm-section" id="rm-tier-section">
+        <div class="rm-section-head">
+          <span class="rm-section-label">Brand Tier</span>
+          <span id="rm-tier-badge"></span>
+          <span class="rm-confidence" id="rm-tier-conf"></span>
+        </div>
+        <div class="rm-section-body">
+          <div class="rm-reasoning" id="rm-tier-reason">—</div>
+        </div>
+      </div>
+    </div>
+    <div class="rm-footer">
+      <div class="rm-meta">Resolved at <strong id="rm-resolved">—</strong></div>
+      <div class="rm-meta">Scrape stage <strong id="rm-scrape">—</strong></div>
+      <div class="rm-meta">Website locations <strong id="rm-loc">—</strong></div>
+      <div class="rm-meta">Google Maps listings <strong id="rm-maps">—</strong></div>
+      <div class="rm-meta">Apollo industry <strong id="rm-apollo">—</strong></div>
+      <div class="rm-meta">Method <strong id="rm-method">—</strong></div>
+    </div>
+  </div>
+</div>
+
 <script>
   let pendingMap = {};
   let tierCounts = {0:0,1:0,2:0,3:0};
+  const reasoningStore = {};
   let totalCompanies = 0;
   let eventSource = null;
   let allLogs = [];  // persist all log lines for popup
@@ -646,7 +760,68 @@
   }
 
   // Close on Escape
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeTerminalPopup(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") { closeTerminalPopup(); closeReasoningModal(); }
+  });
+
+  // ---- Reasoning modal ----
+  function showReasoningModal(id, focus) {
+    const d = reasoningStore[id];
+    if (!d) return;
+
+    document.getElementById("rm-company").textContent = d.name || "—";
+    document.getElementById("rm-domain").textContent  = d.domain || "—";
+
+    // Modality section
+    const modClass = MODALITY_CLASS[d.modality] || "mod-Other";
+    document.getElementById("rm-modality-badge").innerHTML =
+      `<span class="mod-badge ${modClass}">${esc(d.modality || "—")}</span>`;
+    const mConf = d.modality_confidence || 0;
+    const mConfEl = document.getElementById("rm-modality-conf");
+    mConfEl.textContent = mConf + "%";
+    mConfEl.className = "rm-confidence " + (mConf >= 90 ? "rm-conf-high" : mConf >= 70 ? "rm-conf-med" : "rm-conf-low");
+    document.getElementById("rm-modality-reason").textContent = d.reasoning || "No reasoning available.";
+
+    // Brand tier section
+    const btClass = d.brand_tier === "SMB" ? "smb" : d.brand_tier === "MID" ? "mid" : d.brand_tier === "Enterprise" ? "ent" : "";
+    document.getElementById("rm-tier-badge").innerHTML = d.brand_tier
+      ? `<span class="brand-chip ${btClass}">${esc(d.brand_tier)}</span>`
+      : `<span style="color:#94a3b8">—</span>`;
+    const tConf = d.brand_tier_confidence || 0;
+    const tConfEl = document.getElementById("rm-tier-conf");
+    tConfEl.textContent = tConf > 0 ? tConf + "%" : "—";
+    tConfEl.className = "rm-confidence " + (tConf >= 90 ? "rm-conf-high" : tConf >= 70 ? "rm-conf-med" : "rm-conf-low");
+
+    // Brand tier reasoning uses same reasoning field but adds location context
+    let tierReason = d.reasoning || "No reasoning available.";
+    if (d.location_count != null || d.maps_count != null) {
+      const parts = [];
+      if (d.location_count != null) parts.push(`${d.location_count} location(s) found on website`);
+      if (d.maps_count != null) parts.push(`${d.maps_count} listing(s) on Google Maps`);
+      tierReason = parts.join(" · ") + ". " + tierReason;
+    }
+    document.getElementById("rm-tier-reason").textContent = tierReason;
+
+    // Footer metadata
+    const tierLabels = {0:"T0 (skipped)", 1:"T1 — Keywords", 2:"T2 — Gemini Flash", 3:"T3 — Claude Haiku"};
+    const stageLabels = {0:"none", 1:"S1 Static", 2:"S2 Jina", 3:"S3 Playwright", 4:"S4 Local Chrome"};
+    document.getElementById("rm-resolved").textContent = tierLabels[d.tier] || `T${d.tier}`;
+    document.getElementById("rm-scrape").textContent   = stageLabels[d.scrape_stage] || "—";
+    document.getElementById("rm-loc").textContent      = d.location_count != null ? d.location_count : "—";
+    document.getElementById("rm-maps").textContent     = d.maps_count != null ? d.maps_count : "—";
+    document.getElementById("rm-apollo").textContent   = d.apollo_industry || "—";
+    document.getElementById("rm-method").textContent   = d.method || "—";
+
+    // Highlight the section that was clicked
+    document.getElementById("rm-modality-section").classList.toggle("highlight", focus === "modality");
+    document.getElementById("rm-tier-section").classList.toggle("highlight", focus === "brand_tier");
+
+    document.getElementById("reasoning-overlay").classList.add("open");
+  }
+
+  function closeReasoningModal() {
+    document.getElementById("reasoning-overlay").classList.remove("open");
+  }
 
   const MODALITY_CLASS = {
     "Gym":"mod-Gym","HIIT/Functional":"mod-HIIT","Yoga":"mod-Yoga",
@@ -711,8 +886,11 @@
     const modClass = MODALITY_CLASS[modality] || "mod-Other";
     const tierHtml = tier > 0
       ? `<span class="tier-badge t${tier}" style="margin-left:4px;font-size:10px;">T${tier}</span>` : "";
+
+    // Clickable brand tier badge
     const brandHtml = brandTier
-      ? `<span class="brand-chip ${brandTier==="SMB"?"smb":brandTier==="MID"?"mid":"ent"}">${brandTier}</span>`
+      ? `<span class="brand-chip ${brandTier==="SMB"?"smb":brandTier==="MID"?"mid":"ent"} clickable-badge"
+           onclick="showReasoningModal('${id}','brand_tier')" title="Click to see why">${brandTier}</span>`
       : `<span class="blank">—</span>`;
 
     // Scrape stage badge
@@ -721,7 +899,7 @@
       scrapeBadge = `<span class="scrape-badge scrape-queued" title="Queued for local Chrome (Stage 4)">⏳ Queued</span>`;
     } else if (scrapeStage > 0) {
       const stageLabel = {1:"S1",2:"S2",3:"S3",4:"S4"}[scrapeStage] || `S${scrapeStage}`;
-      const stageCls = `scrape-s${scrapeStage}`;
+      const stageCls   = `scrape-s${scrapeStage}`;
       const stageTitle = {1:"Static HTML",2:"Jina Reader",3:"Playwright",4:"Local Chrome"}[scrapeStage] || "";
       scrapeBadge = `<span class="scrape-badge ${stageCls}" title="${stageTitle}">${stageLabel}</span>`;
     }
@@ -733,12 +911,15 @@
         : costUsd > 0
           ? `<span style="color:#6d28d9;font-size:11px;font-weight:500;">$${costUsd.toFixed(4)}</span>`
           : `<span class="blank">—</span>`;
+
     tr.innerHTML = `
       <td>${url ? `<a href="${url}" target="_blank" rel="noopener">${esc(name||"—")}</a>` : esc(name||"—")}</td>
       <td class="muted">${url ? `<a href="${url}" target="_blank" rel="noopener">${esc(disp)}</a>` : "—"}</td>
       <td class="em">${esc(domain||"—")}</td>
       <td>${brandHtml}${tierHtml}</td>
-      <td><span class="mod-badge ${modClass}">${esc(modality||"—")}</span></td>
+      <td><span class="mod-badge ${modClass} clickable-badge"
+               onclick="showReasoningModal('${id}','modality')"
+               title="Click to see why">${esc(modality||"—")}</span></td>
       <td style="white-space:nowrap;">${costHtml} ${scrapeBadge}</td>`;
     return tr;
   }
@@ -781,6 +962,23 @@
       const c = pendingMap[ev.id] || {};
       const url = websiteUrl(c);
       const domain = c.domain || "";
+
+      // Store reasoning data for modal
+      reasoningStore[ev.id] = {
+        name:                 ev.name,
+        domain:               domain,
+        modality:             ev.modality,
+        brand_tier:           ev.brand_tier,
+        tier:                 ev.tier,
+        method:               ev.method || "",
+        reasoning:            ev.reasoning || "",
+        modality_confidence:  ev.modality_confidence || 0,
+        brand_tier_confidence:ev.brand_tier_confidence || 0,
+        location_count:       ev.location_count != null ? ev.location_count : null,
+        maps_count:           ev.maps_count != null ? ev.maps_count : null,
+        apollo_industry:      ev.apollo_industry || "",
+        scrape_stage:         ev.scrape_stage || 0,
+      };
 
       const pRow = document.getElementById(`p-${ev.id}`);
       if (pRow) pRow.remove();
