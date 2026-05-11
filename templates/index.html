@@ -3,298 +3,403 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Batch Data Enrichment</title>
+  <title>Batch Data Enrichment — Hapana</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg: #0f1117;
-      --surface: #1a1d27;
-      --surface2: #22263a;
-      --border: #2e3248;
-      --accent: #6c63ff;
-      --accent2: #4ade80;
-      --warn: #f59e0b;
-      --danger: #f87171;
-      --text: #e2e8f0;
-      --muted: #64748b;
-      --tier1: #4ade80;
-      --tier2: #60a5fa;
-      --tier3: #f59e0b;
+      --bg:          #f8f9fb;
+      --surface:     #ffffff;
+      --border:      #e5e7eb;
+      --border-soft: #f0f1f3;
+      --text:        #0f172a;
+      --text-muted:  #64748b;
+      --text-xs:     #94a3b8;
+      --primary:     #0f172a;
+      --primary-fg:  #ffffff;
+      --radius:      10px;
+      --radius-sm:   6px;
+      --radius-lg:   14px;
+      --shadow-sm:   0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+      --shadow-md:   0 4px 12px rgba(0,0,0,.08);
     }
 
-    body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-size: 13px; min-height: 100vh; display: flex; flex-direction: column; }
-
-    /* ---- Header ---- */
-    header {
-      padding: 16px 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
-    header span.badge { background: var(--surface2); color: var(--muted); padding: 2px 8px; border-radius: 4px; font-size: 11px; }
-    .controls { margin-left: auto; display: flex; gap: 8px; }
-    button {
-      padding: 7px 18px;
-      border: none;
-      border-radius: 6px;
-      font-size: 12px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: opacity 0.15s;
-    }
-    button:disabled { opacity: 0.4; cursor: default; }
-    #btn-start { background: var(--accent); color: #fff; }
-    #btn-stop  { background: var(--surface2); color: var(--danger); border: 1px solid var(--border); }
-
-    /* ---- Progress ---- */
-    .progress-section {
-      padding: 16px 24px 12px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-    }
-    .progress-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-    .progress-meta span { color: var(--muted); }
-    .progress-meta strong { color: var(--text); }
-    .progress-bar-outer { height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
-    .progress-bar-inner { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width 0.4s ease; width: 0%; }
-
-    /* ---- Current company card ---- */
-    .current-section {
-      padding: 12px 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-    }
-    .current-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
-    .current-card {
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 12px 16px;
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr auto;
-      gap: 12px;
-      align-items: center;
-      min-height: 52px;
-    }
-    .current-card .company-name { font-weight: 600; font-size: 14px; }
-    .current-card a { color: var(--accent); text-decoration: none; }
-    .current-card a:hover { text-decoration: underline; }
-    .current-card .domain { color: var(--muted); }
-    .stage-pills { display: flex; gap: 6px; flex-wrap: wrap; }
-    .pill {
-      padding: 2px 8px;
-      border-radius: 99px;
-      font-size: 11px;
-      font-weight: 600;
-      border: 1px solid;
-    }
-    .pill-tier1 { color: var(--tier1); border-color: var(--tier1); }
-    .pill-tier2 { color: var(--tier2); border-color: var(--tier2); }
-    .pill-tier3 { color: var(--tier3); border-color: var(--tier3); }
-    .pill-done  { color: var(--accent2); border-color: var(--accent2); background: rgba(74,222,128,0.08); }
-    .pill-failed { color: var(--danger); border-color: var(--danger); }
-    .pill-skip  { color: var(--muted); border-color: var(--border); }
-    .status-dot {
-      width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
-      animation: pulse 1.2s infinite;
-    }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
-    .status-dot.done { background: var(--accent2); animation: none; }
-    .status-dot.failed { background: var(--danger); animation: none; }
-
-    /* ---- Stats bar ---- */
-    .stats-bar {
-      display: flex;
-      gap: 24px;
-      padding: 8px 24px;
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-    }
-    .stat { display: flex; gap: 6px; align-items: center; }
-    .stat-val { font-weight: 700; font-size: 15px; }
-    .stat-val.green { color: var(--accent2); }
-    .stat-val.yellow { color: var(--warn); }
-    .stat-val.red { color: var(--danger); }
-    .stat-label { color: var(--muted); font-size: 11px; }
-    .tier-breakdown { margin-left: auto; display: flex; gap: 12px; }
-    .tier-stat { font-size: 11px; }
-
-    /* ---- Tables ---- */
-    .tables-wrapper {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 0;
-      flex: 1;
-      overflow: hidden;
-    }
-    .table-panel {
+    body {
+      font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 13px;
+      line-height: 1.5;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-      border-right: 1px solid var(--border);
     }
-    .table-panel:last-child { border-right: none; }
-    .table-header {
-      padding: 10px 16px;
+
+    /* ── Page header ── */
+    .page-header {
       background: var(--surface);
       border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
       display: flex;
       align-items: center;
-      gap: 8px;
-      font-weight: 600;
-      font-size: 12px;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
+      gap: 12px;
     }
-    .table-header .count-badge {
-      margin-left: auto;
-      background: var(--surface2);
-      color: var(--muted);
-      padding: 1px 7px;
+    .page-header-icon {
+      width: 32px; height: 32px;
+      background: #0f172a;
+      border-radius: var(--radius-sm);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .page-header-icon svg { color: white; }
+    .page-title { font-size: 15px; font-weight: 600; color: var(--text); }
+    .page-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+    .header-actions { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 0 14px; height: 36px;
+      border-radius: var(--radius-sm);
+      font-family: inherit; font-size: 13px; font-weight: 500;
+      cursor: pointer; border: none; transition: all .15s ease;
+      white-space: nowrap;
+    }
+    .btn-primary { background: var(--primary); color: var(--primary-fg); }
+    .btn-primary:hover { opacity: .85; }
+    .btn-primary:disabled { opacity: .4; cursor: default; }
+    .btn-outline {
+      background: transparent; color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-outline:hover { background: #f8f9fb; }
+    .btn-outline:disabled { opacity: .4; cursor: default; }
+    .btn svg { width: 14px; height: 14px; }
+
+    /* ── Stats row ── */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      padding: 20px 24px 0;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px 20px;
+      box-shadow: var(--shadow-sm);
+    }
+    .stat-card.blue  { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border-color: #bfdbfe; }
+    .stat-card.green { background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%); border-color: #bbf7d0; }
+    .stat-card.amber { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border-color: #fde68a; }
+    .stat-card.slate { background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); border-color: #e2e8f0; }
+    .stat-label { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .06em; }
+    .blue  .stat-label { color: #1d4ed8; }
+    .green .stat-label { color: #15803d; }
+    .amber .stat-label { color: #b45309; }
+    .slate .stat-label { color: #475569; }
+    .stat-value { font-size: 28px; font-weight: 700; margin-top: 6px; line-height: 1; }
+    .blue  .stat-value { color: #1e40af; }
+    .green .stat-value { color: #166534; }
+    .amber .stat-value { color: #92400e; }
+    .slate .stat-value { color: #1e293b; }
+    .stat-hint { font-size: 11px; margin-top: 4px; }
+    .blue  .stat-hint { color: #3b82f6; }
+    .green .stat-hint { color: #22c55e; }
+    .amber .stat-hint { color: #f59e0b; }
+    .slate .stat-hint { color: #94a3b8; }
+
+    /* ── Progress card ── */
+    .section {
+      padding: 20px 24px 0;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+    }
+    .card-header {
+      padding: 16px 20px 14px;
+      border-bottom: 1px solid var(--border-soft);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .card-title { font-size: 13px; font-weight: 600; }
+    .card-body { padding: 16px 20px; }
+
+    .progress-bar-outer {
+      height: 6px;
+      background: #f1f5f9;
       border-radius: 99px;
-      font-size: 11px;
-    }
-    .table-scroll { flex: 1; overflow-y: auto; }
-
-    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    thead th {
-      position: sticky; top: 0;
-      background: var(--surface2);
-      padding: 8px 10px;
-      text-align: left;
-      font-size: 11px;
-      font-weight: 600;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      border-bottom: 1px solid var(--border);
-      white-space: nowrap;
-    }
-    thead th:nth-child(1) { width: 24%; }
-    thead th:nth-child(2) { width: 22%; }
-    thead th:nth-child(3) { width: 18%; }
-    thead th:nth-child(4) { width: 16%; }
-    thead th:nth-child(5) { width: 20%; }
-
-    tbody tr {
-      border-bottom: 1px solid var(--border);
-      transition: background 0.15s;
-    }
-    tbody tr:hover { background: var(--surface2); }
-    tbody tr.new-row { animation: fadeIn 0.4s ease; }
-    @keyframes fadeIn { from { opacity:0; background: rgba(108,99,255,0.12); } to { opacity:1; } }
-
-    td {
-      padding: 7px 10px;
-      vertical-align: middle;
       overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
+      margin-top: 10px;
     }
-    td a { color: var(--accent); text-decoration: none; font-weight: 500; }
-    td a:hover { text-decoration: underline; }
-    td.muted { color: var(--muted); font-size: 12px; }
-    td.modality-cell { font-size: 12px; }
+    .progress-bar-inner {
+      height: 100%;
+      background: linear-gradient(90deg, #0f172a, #3b82f6);
+      border-radius: 99px;
+      width: 0%;
+      transition: width .5s ease;
+    }
+    .progress-meta {
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .progress-pct { font-size: 18px; font-weight: 700; color: var(--text); }
+    .progress-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── Current company card ── */
+    .current-card {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr auto;
+      gap: 20px;
+      align-items: center;
+    }
+    .company-name-link { font-weight: 600; font-size: 14px; color: var(--text); text-decoration: none; }
+    .company-name-link:hover { color: #3b82f6; }
+    .company-domain { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .current-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--text-xs); margin-bottom: 4px; }
+    .current-value { font-size: 13px; font-weight: 500; }
 
     .tier-badge {
-      display: inline-block;
-      padding: 1px 6px;
-      border-radius: 4px;
-      font-size: 10px;
-      font-weight: 700;
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px; font-weight: 600;
     }
-    .t1 { background: rgba(74,222,128,0.12); color: var(--tier1); }
-    .t2 { background: rgba(96,165,250,0.12); color: var(--tier2); }
-    .t3 { background: rgba(245,158,11,0.12); color: var(--tier3); }
+    .tier-badge.t1 { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+    .tier-badge.t2 { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .tier-badge.t3 { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
+    .tier-badge.t0 { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+
+    .processing-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #3b82f6;
+      animation: pulse 1.2s infinite;
+      margin-top: 4px;
+    }
+    .processing-dot.done  { background: #22c55e; animation: none; }
+    .processing-dot.idle  { background: #e2e8f0; animation: none; }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:scale(.85)} }
+
+    /* ── Tier breakdown ── */
+    .tier-row {
+      display: flex; gap: 8px; margin-top: 4px;
+    }
+
+    /* ── Tables section ── */
+    .tables-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      padding: 20px 24px 24px;
+    }
+    .table-card-header {
+      padding: 12px 16px;
+      display: flex; align-items: center; gap: 8px;
+      border-bottom: 1px solid var(--border-soft);
+    }
+    .table-card-title { font-size: 12px; font-weight: 600; }
+    .count-chip {
+      margin-left: auto;
+      background: #f1f5f9;
+      color: var(--text-muted);
+      padding: 1px 8px; border-radius: 99px;
+      font-size: 11px; font-weight: 500;
+    }
+    .table-scroll { max-height: 340px; overflow-y: auto; }
+
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      position: sticky; top: 0; z-index: 1;
+      background: #f8f9fb;
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 11px; font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: .05em;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    thead th:nth-child(1) { width: 22%; }
+    thead th:nth-child(2) { width: 22%; }
+    thead th:nth-child(3) { width: 16%; }
+    thead th:nth-child(4) { width: 16%; }
+    thead th:nth-child(5) { width: 24%; }
+
+    tbody tr { border-bottom: 1px solid var(--border-soft); transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #f8f9fb; }
+    tbody tr.row-in { animation: rowIn .35s ease; }
+    @keyframes rowIn { from { opacity:0; background:#eff6ff; } to { opacity:1; } }
+
+    td {
+      padding: 8px 12px;
+      vertical-align: middle;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    td a { color: #3b82f6; text-decoration: none; font-weight: 500; }
+    td a:hover { text-decoration: underline; }
+    td.muted { color: var(--text-muted); font-size: 12px; }
+    td.em { font-size: 11px; color: var(--text-xs); }
+
+    /* Modality badge colours */
+    .mod-badge {
+      display: inline-flex; align-items: center;
+      padding: 1px 7px; border-radius: 99px;
+      font-size: 11px; font-weight: 500;
+    }
+    .mod-Gym             { background:#eff6ff; color:#1d4ed8; }
+    .mod-HIIT            { background:#fef2f2; color:#dc2626; }
+    .mod-Yoga            { background:#faf5ff; color:#7c3aed; }
+    .mod-Pilates         { background:#fdf2f8; color:#be185d; }
+    .mod-Martial         { background:#fffbeb; color:#b45309; }
+    .mod-Boxing          { background:#fff7ed; color:#c2410c; }
+    .mod-Dance           { background:#ecfeff; color:#0e7490; }
+    .mod-Spin            { background:#f0fdf4; color:#15803d; }
+    .mod-Wellness        { background:#f0fdf4; color:#166534; }
+    .mod-Injury          { background:#eef2ff; color:#3730a3; }
+    .mod-EMS             { background:#faf5ff; color:#6d28d9; }
+    .mod-Golf            { background:#f7fee7; color:#3f6212; }
+    .mod-Tanning         { background:#fffbeb; color:#92400e; }
+    .mod-Education       { background:#f8fafc; color:#475569; }
+    .mod-Other           { background:#f8fafc; color:#94a3b8; }
 
     .brand-chip {
-      display: inline-block;
-      padding: 1px 7px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
+      display: inline-flex; align-items: center;
+      padding: 1px 7px; border-radius: 99px;
+      font-size: 11px; font-weight: 600;
     }
-    .smb  { background: rgba(74,222,128,0.1);  color: #4ade80; }
-    .mid  { background: rgba(96,165,250,0.1);  color: #60a5fa; }
-    .ent  { background: rgba(245,158,11,0.1);  color: #f59e0b; }
-    .blank-val { color: var(--border); }
+    .smb  { background:#f0fdf4; color:#15803d; border:1px solid #bbf7d0; }
+    .mid  { background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; }
+    .ent  { background:#fffbeb; color:#b45309; border:1px solid #fde68a; }
+    .blank { color:#cbd5e1; }
 
-    /* ---- Empty state ---- */
     .empty-state {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      padding: 40px; color: var(--muted); gap: 8px;
+      text-align: center; padding: 32px 16px;
+      color: var(--text-xs); font-size: 12px;
     }
-    .empty-state svg { opacity: 0.3; }
+    .empty-state svg { margin: 0 auto 8px; display:block; opacity:.3; }
 
-    /* ---- Scrollbar ---- */
-    ::-webkit-scrollbar { width: 5px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 99px; }
   </style>
 </head>
 <body>
 
-<!-- Header -->
-<header>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-  <h1>Batch Data Enrichment</h1>
-  <span class="badge" id="batch-label">Loading batch...</span>
-  <div class="controls">
-    <button id="btn-start" onclick="startBatch()">▶ Start</button>
-    <button id="btn-stop" onclick="stopBatch()" disabled>⏹ Stop</button>
+<!-- Page header -->
+<header class="page-header">
+  <div class="page-header-icon">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+  </div>
+  <div>
+    <div class="page-title">Batch Data Enrichment</div>
+    <div class="page-subtitle" id="batch-label">Loading batch...</div>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-outline" id="btn-stop" onclick="stopBatch()" disabled>
+      <svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+      Stop
+    </button>
+    <button class="btn btn-primary" id="btn-start" onclick="startBatch()">
+      <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      Start Enrichment
+    </button>
   </div>
 </header>
 
-<!-- Progress -->
-<div class="progress-section">
-  <div class="progress-meta">
-    <span>Progress</span>
-    <strong id="progress-text">0 / 0</strong>
+<!-- Stats row -->
+<div class="stats-row">
+  <div class="stat-card blue">
+    <div class="stat-label">Total in Batch</div>
+    <div class="stat-value" id="stat-total">—</div>
+    <div class="stat-hint" id="stat-batch-name">Batch 1</div>
   </div>
-  <div class="progress-bar-outer">
-    <div class="progress-bar-inner" id="progress-bar"></div>
+  <div class="stat-card green">
+    <div class="stat-label">Enriched</div>
+    <div class="stat-value" id="stat-enriched">0</div>
+    <div class="stat-hint">written to HubSpot</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">Pending</div>
+    <div class="stat-value" id="stat-pending">—</div>
+    <div class="stat-hint">remaining</div>
+  </div>
+  <div class="stat-card slate">
+    <div class="stat-label">Failed</div>
+    <div class="stat-value" id="stat-failed">0</div>
+    <div class="stat-hint" id="tier-hint">T1: 0 · T2: 0 · T3: 0</div>
   </div>
 </div>
 
-<!-- Current company -->
-<div class="current-section">
-  <div class="current-label">Currently Processing</div>
-  <div class="current-card" id="current-card">
-    <div class="company-name" style="color:var(--muted)">—</div>
-    <div class="domain" style="color:var(--muted)">Press Start to begin</div>
-    <div class="stage-pills"></div>
-    <div></div>
-  </div>
-</div>
+<!-- Progress + current company -->
+<div class="section" style="display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-top:16px;">
 
-<!-- Stats bar -->
-<div class="stats-bar">
-  <div class="stat"><span class="stat-val green" id="stat-enriched">0</span><span class="stat-label">Enriched</span></div>
-  <div class="stat"><span class="stat-val red" id="stat-failed">0</span><span class="stat-label">Failed</span></div>
-  <div class="stat"><span class="stat-val yellow" id="stat-pending">—</span><span class="stat-label">Pending</span></div>
-  <div class="tier-breakdown">
-    <span class="tier-stat t1">T1: <b id="t1-count">0</b></span>
-    <span class="tier-stat t2">T2: <b id="t2-count">0</b></span>
-    <span class="tier-stat t3">T3: <b id="t3-count">0</b></span>
+  <!-- Progress -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Progress</span>
+      <span style="font-size:18px;font-weight:700;" id="progress-pct">0%</span>
+    </div>
+    <div class="card-body">
+      <div class="progress-meta">
+        <span style="font-size:12px;color:var(--text-muted)">Companies processed</span>
+        <span style="font-size:12px;font-weight:600;" id="progress-count">0 / 0</span>
+      </div>
+      <div class="progress-bar-outer">
+        <div class="progress-bar-inner" id="progress-bar"></div>
+      </div>
+      <div class="tier-row" style="margin-top:12px;">
+        <span class="tier-badge t1">T1 <b id="t1-count">0</b></span>
+        <span class="tier-badge t2">T2 <b id="t2-count">0</b></span>
+        <span class="tier-badge t3">T3 <b id="t3-count">0</b></span>
+      </div>
+    </div>
   </div>
+
+  <!-- Currently processing -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">Currently Processing</span>
+      <div class="processing-dot idle" id="proc-dot"></div>
+    </div>
+    <div class="card-body">
+      <div class="current-card" id="current-card">
+        <div>
+          <div class="company-name-link" style="color:var(--text-muted)">—</div>
+          <div class="company-domain">Press Start Enrichment to begin</div>
+        </div>
+        <div>
+          <div class="current-label">Stage</div>
+          <div class="current-value" style="color:var(--text-muted)">—</div>
+        </div>
+        <div>
+          <div class="current-label">Result</div>
+          <div class="current-value" style="color:var(--text-muted)">—</div>
+        </div>
+        <div></div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <!-- Tables -->
-<div class="tables-wrapper">
+<div class="tables-section">
 
   <!-- Pending -->
-  <div class="table-panel">
-    <div class="table-header" style="color:var(--muted)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      Pending
-      <span class="count-badge" id="pending-count">0</span>
+  <div class="card">
+    <div class="table-card-header">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      <span class="table-card-title" style="color:var(--text-muted)">Pending</span>
+      <span class="count-chip" id="pending-count">0</span>
     </div>
     <div class="table-scroll">
-      <table id="pending-table">
+      <table>
         <thead>
           <tr>
             <th>Company Name</th>
@@ -306,8 +411,8 @@
         </thead>
         <tbody id="pending-tbody">
           <tr><td colspan="5"><div class="empty-state">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><line x1="12" y1="12" x2="12" y2="12"/></svg>
-            <span>Click Start to load companies</span>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Click Start Enrichment to load companies
           </div></td></tr>
         </tbody>
       </table>
@@ -315,14 +420,14 @@
   </div>
 
   <!-- Enriched -->
-  <div class="table-panel">
-    <div class="table-header" style="color:var(--accent2)">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-      Enriched
-      <span class="count-badge" id="enriched-count">0</span>
+  <div class="card">
+    <div class="table-card-header">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      <span class="table-card-title" style="color:#15803d;">Enriched</span>
+      <span class="count-chip" id="enriched-count" style="background:#f0fdf4;color:#15803d;">0</span>
     </div>
     <div class="table-scroll">
-      <table id="enriched-table">
+      <table>
         <thead>
           <tr>
             <th>Company Name</th>
@@ -334,8 +439,8 @@
         </thead>
         <tbody id="enriched-tbody">
           <tr><td colspan="5"><div class="empty-state">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
-            <span>Enriched companies will appear here</span>
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            Enriched companies will appear here
           </div></td></tr>
         </tbody>
       </table>
@@ -345,208 +450,229 @@
 </div>
 
 <script>
-  // State
-  let companies = [];        // full list
-  let pendingMap = {};       // id → company row data
-  let enrichedList = [];
-  let tierCounts = {1:0, 2:0, 3:0};
-  let eventSource = null;
+  let pendingMap = {};
+  let tierCounts = {1:0,2:0,3:0};
   let totalCompanies = 0;
+  let eventSource = null;
 
-  // ---- Load batch on page load ----
+  const MODALITY_CLASS = {
+    "Gym":"mod-Gym","HIIT/Functional":"mod-HIIT","Yoga":"mod-Yoga",
+    "Pilates":"mod-Pilates","Martial Arts":"mod-Martial","Boxing":"mod-Boxing",
+    "Dance":"mod-Dance","Spin/Indoor Cycle":"mod-Spin","Wellness/Recovery":"mod-Wellness",
+    "Injury Prevention":"mod-Injury","EMS":"mod-EMS","Golf":"mod-Golf",
+    "Tanning":"mod-Tanning","Education":"mod-Education","Other":"mod-Other",
+  };
+
   async function loadBatch() {
     try {
       const res = await fetch("/load-batch");
       const data = await res.json();
-      companies = data.companies;
       totalCompanies = data.total;
-      document.getElementById("batch-label").textContent = `${totalCompanies} companies`;
+      document.getElementById("batch-label").textContent = `Batch 1 — ${totalCompanies} companies`;
+      document.getElementById("stat-total").textContent = totalCompanies;
       document.getElementById("stat-pending").textContent = totalCompanies;
       document.getElementById("pending-count").textContent = totalCompanies;
-      document.getElementById("progress-text").textContent = `0 / ${totalCompanies}`;
-      populatePendingTable(companies);
-    } catch (e) {
+      document.getElementById("progress-count").textContent = `0 / ${totalCompanies}`;
+      populatePending(data.companies);
+    } catch(e) {
       document.getElementById("batch-label").textContent = "Error loading batch";
     }
   }
 
-  function populatePendingTable(companies) {
+  function populatePending(companies) {
     const tbody = document.getElementById("pending-tbody");
-    if (companies.length === 0) return;
     tbody.innerHTML = "";
     companies.forEach(c => {
       pendingMap[c.id] = c;
-      const website = c.website || (c.domain ? "https://" + c.domain : "");
-      const row = makePendingRow(c.id, c.name, website, c.domain);
-      tbody.appendChild(row);
+      tbody.appendChild(makePendingRow(c));
     });
   }
 
-  function makePendingRow(id, name, website, domain) {
+  function websiteUrl(c) {
+    if (c.website && c.website.startsWith("http")) return c.website;
+    if (c.website) return "https://" + c.website;
+    if (c.domain) return "https://" + c.domain;
+    return "";
+  }
+
+  function makePendingRow(c) {
     const tr = document.createElement("tr");
-    tr.id = `pending-${id}`;
-    const displayUrl = website ? website.replace(/^https?:\/\//, "") : "";
+    tr.id = `p-${c.id}`;
+    const url = websiteUrl(c);
+    const disp = url ? url.replace(/^https?:\/\/(www\.)?/,"") : "—";
     tr.innerHTML = `
-      <td>${website ? `<a href="${website}" target="_blank" rel="noopener">${escHtml(name || "—")}</a>` : escHtml(name || "—")}</td>
-      <td class="muted">${website ? `<a href="${website}" target="_blank" rel="noopener">${escHtml(displayUrl)}</a>` : "—"}</td>
-      <td class="muted">${escHtml(domain || "—")}</td>
-      <td class="blank-val">—</td>
-      <td class="blank-val">—</td>
-    `;
+      <td>${url ? `<a href="${url}" target="_blank" rel="noopener">${esc(c.name||"—")}</a>` : esc(c.name||"—")}</td>
+      <td class="muted">${url ? `<a href="${url}" target="_blank" rel="noopener">${esc(disp)}</a>` : "—"}</td>
+      <td class="em">${esc(c.domain||"—")}</td>
+      <td><span class="blank">—</span></td>
+      <td><span class="blank">—</span></td>`;
     return tr;
   }
 
-  function makeEnrichedRow(id, name, website, domain, brandTier, modality, tier, skipped) {
+  function makeEnrichedRow(id, name, url, domain, brandTier, modality, tier) {
     const tr = document.createElement("tr");
-    tr.className = "new-row";
-    tr.id = `enriched-${id}`;
-    const displayUrl = website ? website.replace(/^https?:\/\//, "") : "";
-    const tierBadge = tier > 0 ? `<span class="tier-badge t${tier}">T${tier}</span>` : `<span class="tier-badge" style="opacity:.4">—</span>`;
-    const brandChip = brandTier ? `<span class="brand-chip ${brandTier === 'SMB' ? 'smb' : brandTier === 'MID' ? 'mid' : 'ent'}">${brandTier}</span>` : `<span class="blank-val">—</span>`;
+    tr.id = `e-${id}`;
+    tr.className = "row-in";
+    const disp = url ? url.replace(/^https?:\/\/(www\.)?/,"") : "—";
+    const modClass = MODALITY_CLASS[modality] || "mod-Other";
+    const tierHtml = tier > 0
+      ? `<span class="tier-badge t${tier}" style="margin-left:4px;font-size:10px;">T${tier}</span>` : "";
+    const brandHtml = brandTier
+      ? `<span class="brand-chip ${brandTier==="SMB"?"smb":brandTier==="MID"?"mid":"ent"}">${brandTier}</span>`
+      : `<span class="blank">—</span>`;
     tr.innerHTML = `
-      <td>${website ? `<a href="${website}" target="_blank" rel="noopener">${escHtml(name || "—")}</a>` : escHtml(name || "—")}</td>
-      <td class="muted">${website ? `<a href="${website}" target="_blank" rel="noopener">${escHtml(displayUrl)}</a>` : "—"}</td>
-      <td class="muted">${escHtml(domain || "—")}</td>
-      <td>${brandChip} ${tierBadge}</td>
-      <td class="modality-cell">${escHtml(modality || "—")}</td>
-    `;
+      <td>${url ? `<a href="${url}" target="_blank" rel="noopener">${esc(name||"—")}</a>` : esc(name||"—")}</td>
+      <td class="muted">${url ? `<a href="${url}" target="_blank" rel="noopener">${esc(disp)}</a>` : "—"}</td>
+      <td class="em">${esc(domain||"—")}</td>
+      <td>${brandHtml}${tierHtml}</td>
+      <td><span class="mod-badge ${modClass}">${esc(modality||"—")}</span></td>`;
     return tr;
   }
 
-  // ---- SSE ----
   function connectStream() {
     if (eventSource) eventSource.close();
     eventSource = new EventSource("/stream");
     eventSource.onmessage = handleEvent;
-    eventSource.onerror = () => {
-      setTimeout(connectStream, 3000);
-    };
+    eventSource.onerror = () => setTimeout(connectStream, 3000);
   }
 
   function handleEvent(e) {
     const ev = JSON.parse(e.data);
 
     if (ev.type === "batch_started") {
-      // Companies come from /load-batch, already shown
       document.getElementById("btn-start").disabled = true;
       document.getElementById("btn-stop").disabled = false;
+      document.getElementById("proc-dot").className = "processing-dot";
     }
 
     if (ev.type === "company_start") {
-      updateCurrentCard(ev.id, ev.name, ev.domain, null, null, null);
+      const c = pendingMap[ev.id] || {};
+      const url = websiteUrl(c) || (ev.domain ? "https://"+ev.domain : "");
+      setCurrentCard(ev.name, url, ev.domain||c.domain||"", "—", "—", null, false);
     }
 
     if (ev.type === "tier_attempt") {
-      updateCurrentCardStage(ev.tier, ev.method);
+      updateCurrentStage(`Tier ${ev.tier} — ${ev.method}`);
     }
 
     if (ev.type === "company_done") {
-      const company = pendingMap[ev.id] || {};
-      const website = company.website || (company.domain ? "https://" + company.domain : ev.domain ? "https://" + ev.domain : "");
+      const c = pendingMap[ev.id] || {};
+      const url = websiteUrl(c);
+      const domain = c.domain || "";
 
-      // Remove from pending
-      const pendingRow = document.getElementById(`pending-${ev.id}`);
-      if (pendingRow) pendingRow.remove();
+      const pRow = document.getElementById(`p-${ev.id}`);
+      if (pRow) pRow.remove();
 
-      // Add to enriched
-      const tbody = document.getElementById("enriched-tbody");
-      // Remove empty state if present
-      const emptyRow = tbody.querySelector(".empty-state");
+      // Clear enriched empty state
+      const etbody = document.getElementById("enriched-tbody");
+      const emptyRow = etbody.querySelector(".empty-state");
       if (emptyRow) emptyRow.closest("tr").remove();
 
-      const row = makeEnrichedRow(ev.id, ev.name, website, company.domain || "",
-        ev.brand_tier, ev.modality, ev.tier, ev.skipped);
-      tbody.insertBefore(row, tbody.firstChild);
+      const row = makeEnrichedRow(ev.id, ev.name, url, domain, ev.brand_tier, ev.modality, ev.tier);
+      etbody.insertBefore(row, etbody.firstChild);
 
-      // Tier counts
-      if (ev.tier > 0) tierCounts[ev.tier] = (tierCounts[ev.tier] || 0) + 1;
-      document.getElementById("t1-count").textContent = tierCounts[1] || 0;
-      document.getElementById("t2-count").textContent = tierCounts[2] || 0;
-      document.getElementById("t3-count").textContent = tierCounts[3] || 0;
+      if (ev.tier > 0) {
+        tierCounts[ev.tier] = (tierCounts[ev.tier]||0) + 1;
+        document.getElementById("t1-count").textContent = tierCounts[1]||0;
+        document.getElementById("t2-count").textContent = tierCounts[2]||0;
+        document.getElementById("t3-count").textContent = tierCounts[3]||0;
+      }
 
-      updateCurrentCard(ev.id, ev.name, company.domain, ev.modality, ev.brand_tier, ev.tier, true);
+      setCurrentCard(ev.name, url, domain, `Tier ${ev.tier}`, ev.modality, ev.brand_tier, true);
     }
 
     if (ev.type === "company_failed") {
-      const pendingRow = document.getElementById(`pending-${ev.id}`);
-      if (pendingRow) pendingRow.style.opacity = "0.4";
+      const pRow = document.getElementById(`p-${ev.id}`);
+      if (pRow) pRow.style.opacity = ".4";
     }
 
     if (ev.type === "progress") {
       const pct = Math.round((ev.current / ev.total) * 100);
       document.getElementById("progress-bar").style.width = pct + "%";
-      document.getElementById("progress-text").textContent = `${ev.current} / ${ev.total}`;
+      document.getElementById("progress-pct").textContent = pct + "%";
+      document.getElementById("progress-count").textContent = `${ev.current} / ${ev.total}`;
       document.getElementById("stat-enriched").textContent = ev.enriched;
       document.getElementById("stat-failed").textContent = ev.failed;
-      const pending = ev.total - ev.current;
-      document.getElementById("stat-pending").textContent = pending;
-      document.getElementById("pending-count").textContent = pending;
+      const pend = ev.total - ev.current;
+      document.getElementById("stat-pending").textContent = pend;
+      document.getElementById("pending-count").textContent = pend;
       document.getElementById("enriched-count").textContent = ev.enriched;
+      document.getElementById("tier-hint").textContent = `T1: ${tierCounts[1]||0} · T2: ${tierCounts[2]||0} · T3: ${tierCounts[3]||0}`;
     }
 
     if (ev.type === "batch_done") {
       document.getElementById("btn-start").disabled = false;
       document.getElementById("btn-stop").disabled = true;
-      document.getElementById("batch-label").textContent = `Done — ${ev.enriched}/${ev.total} enriched`;
+      document.getElementById("proc-dot").className = "processing-dot done";
+      document.getElementById("batch-label").textContent = `Batch 1 — Done · ${ev.enriched}/${ev.total} enriched`;
     }
 
     if (ev.type === "batch_stopped") {
       document.getElementById("btn-start").disabled = false;
       document.getElementById("btn-stop").disabled = true;
+      document.getElementById("proc-dot").className = "processing-dot idle";
     }
   }
 
-  function updateCurrentCard(id, name, domain, modality, brandTier, tier, done) {
-    const company = pendingMap[id] || {};
-    const website = company.website || (domain ? "https://" + domain : "");
-    const card = document.getElementById("current-card");
-    card.innerHTML = `
+  function setCurrentCard(name, url, domain, stage, modality, brandTier, done) {
+    const nameHtml = url
+      ? `<a class="company-name-link" href="${url}" target="_blank">${esc(name||"—")}</a>`
+      : `<span class="company-name-link">${esc(name||"—")}</span>`;
+    const modClass = MODALITY_CLASS[modality] || "mod-Other";
+    const modHtml = modality && modality !== "—"
+      ? `<span class="mod-badge ${modClass}">${esc(modality)}</span>` : `<span style="color:var(--text-muted)">—</span>`;
+    const tierNum = stage && stage.includes("Tier") ? stage.match(/\d/)?.[0] : null;
+    const tierHtml = tierNum
+      ? `<span class="tier-badge t${tierNum}">${esc(stage)}</span>`
+      : `<span style="color:var(--text-muted)">${esc(stage||"—")}</span>`;
+
+    document.getElementById("current-card").innerHTML = `
       <div>
-        <div class="company-name">${website ? `<a href="${website}" target="_blank">${escHtml(name || "—")}</a>` : escHtml(name || "—")}</div>
-        <div class="domain">${escHtml(domain || "—")}</div>
+        ${nameHtml}
+        <div class="company-domain">${esc(domain||"—")}</div>
       </div>
       <div>
-        ${modality ? `<strong>${escHtml(modality)}</strong>` : `<span style="color:var(--muted)">Classifying...</span>`}
-        ${brandTier ? `&nbsp;<span class="brand-chip ${brandTier === 'SMB' ? 'smb' : brandTier === 'MID' ? 'mid' : 'ent'}">${brandTier}</span>` : ""}
+        <div class="current-label">Stage</div>
+        <div class="current-value">${tierHtml}</div>
       </div>
-      <div class="stage-pills" id="stage-pills">
-        ${tier ? `<span class="pill pill-tier${tier}">Tier ${tier}</span>` : `<span class="pill pill-tier1" style="opacity:.5">Tier 1</span>`}
-        ${done ? `<span class="pill pill-done">✓ Done</span>` : ""}
+      <div>
+        <div class="current-label">Modality · Brand Tier</div>
+        <div class="current-value" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-top:2px;">
+          ${modHtml}
+          ${brandTier ? `<span class="brand-chip ${brandTier==="SMB"?"smb":brandTier==="MID"?"mid":"ent"}">${brandTier}</span>` : ""}
+        </div>
       </div>
-      <div class="status-dot ${done ? 'done' : ''}"></div>
-    `;
+      <div class="processing-dot ${done?"done":""}"></div>`;
+
+    document.getElementById("proc-dot").className = `processing-dot ${done?"done":""}`;
   }
 
-  function updateCurrentCardStage(tier, method) {
-    const pills = document.getElementById("stage-pills");
-    if (pills) {
-      pills.innerHTML = `<span class="pill pill-tier${tier}">Tier ${tier}</span><span style="color:var(--muted);font-size:11px">${escHtml(method)}</span>`;
+  function updateCurrentStage(stage) {
+    const el = document.querySelector(".current-card .current-value");
+    if (el) {
+      const tierNum = stage.match(/Tier (\d)/)?.[1];
+      if (tierNum) {
+        el.innerHTML = `<span class="tier-badge t${tierNum}">${esc(stage)}</span>`;
+      }
     }
   }
 
   async function startBatch() {
     document.getElementById("btn-start").disabled = true;
-    // Reset enriched table
-    document.getElementById("enriched-tbody").innerHTML = `<tr><td colspan="5"><div class="empty-state" style="padding:20px"><span>Enriched companies will appear here</span></div></td></tr>`;
-    enrichedList = [];
-    tierCounts = {1:0, 2:0, 3:0};
-    document.getElementById("t1-count").textContent = "0";
-    document.getElementById("t2-count").textContent = "0";
-    document.getElementById("t3-count").textContent = "0";
-
-    await fetch("/start", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({}) });
+    tierCounts = {1:0,2:0,3:0};
+    document.getElementById("enriched-tbody").innerHTML = `<tr><td colspan="5"><div class="empty-state" style="padding:20px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Enriched companies will appear here</div></td></tr>`;
+    await fetch("/start", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{}"});
   }
 
   async function stopBatch() {
-    await fetch("/stop", { method: "POST" });
+    await fetch("/stop", {method:"POST"});
     document.getElementById("btn-stop").disabled = true;
   }
 
-  function escHtml(str) {
-    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  function esc(s) {
+    return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
   }
 
-  // Init
   loadBatch();
   connectStream();
 </script>

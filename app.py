@@ -25,7 +25,7 @@ _batch_thread: threading.Thread | None = None
 _stop_flag = threading.Event()
 
 GCP_PROJECT = os.environ.get("GCP_PROJECT", "verdant-wave-440404-g9")
-HUBSPOT_BATCH_LIST_ID = os.environ.get("HUBSPOT_BATCH_LIST_ID", "23761")  # Batch 1
+HUBSPOT_BATCH_LIST_ID = os.environ.get("HUBSPOT_BATCH_LIST_ID", "23763")  # Batch 1 — 10 companies
 
 
 def get_db():
