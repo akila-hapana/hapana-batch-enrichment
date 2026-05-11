@@ -128,7 +128,16 @@ STRONG_KEYWORDS = {
     ],
     "Dance": [
         "dance studio", "dance academy", "ballet school",
-        "zumba studio", "hip hop dance",
+        "zumba studio", "hip hop dance", "dance fitness",
+    ],
+    "Barre": [
+        "barre studio", "barre class", "barre fitness", "barre academy",
+        "pure barre", "barre method",
+    ],
+    "Personal Training": [
+        "personal training studio", "personal training gym",
+        "personal trainer studio", "private training studio",
+        "one on one training", "1-on-1 training", "pt studio",
     ],
     "Wellness/Recovery": [
         "float tank", "flotation centre", "cryotherapy", "infrared sauna",
@@ -144,19 +153,21 @@ STRONG_KEYWORDS = {
 
 # Weaker keywords — give modality signal but not ≥90% alone
 SIGNAL_KEYWORDS = {
-    "Gym":              ["gym", "fitness", "health club", "fitness center", "fitness centre", "athletic club"],
-    "HIIT/Functional":  ["crossfit", "bootcamp", "hiit", "functional"],
-    "Yoga":             ["yoga"],
-    "Pilates":          ["pilates"],
-    "Martial Arts":     ["mma", "martial arts", "jiu jitsu", "muay thai", "kickboxing", "karate", "taekwondo"],
-    "Boxing":           ["boxing"],
-    "Spin/Indoor Cycle":["spin", "cycling studio", "indoor cycle"],
-    "Dance":            ["dance", "ballet", "zumba"],
-    "Wellness/Recovery":["wellness", "recovery", "float", "cryotherapy", "infrared"],
-    "EMS":              ["ems"],
-    "Golf":             ["golf"],
-    "Tanning":          ["tanning salon", "spray tan", "solarium"],
-    "Education":        ["fitness education", "fitness academy", "personal training course"],
+    "Gym":               ["gym", "fitness", "health club", "fitness center", "fitness centre", "athletic club"],
+    "HIIT/Functional":   ["crossfit", "bootcamp", "hiit", "functional"],
+    "Yoga":              ["yoga"],
+    "Pilates":           ["pilates"],
+    "Martial Arts":      ["mma", "martial arts", "jiu jitsu", "muay thai", "kickboxing", "karate", "taekwondo"],
+    "Boxing":            ["boxing"],
+    "Spin/Indoor Cycle": ["spin", "cycling studio", "indoor cycle"],
+    "Dance":             ["dance", "ballet", "zumba", "urban dance"],
+    "Barre":             ["barre"],
+    "Personal Training": ["personal training", "personal trainer", "private trainer", "1-on-1", "one-on-one"],
+    "Wellness/Recovery": ["wellness", "recovery", "float", "cryotherapy", "infrared"],
+    "EMS":               ["ems"],
+    "Golf":              ["golf"],
+    "Tanning":           ["tanning salon", "spray tan", "solarium"],
+    "Education":         ["fitness education", "fitness academy", "personal training course"],
 }
 
 NAV_LOCATION_HINTS = [

@@ -18,11 +18,11 @@ ANTHROPIC_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 _HAIKU_IN  = 0.80 / 1_000_000
 _HAIKU_OUT = 4.00 / 1_000_000
 
-HAIKU_SYSTEM = """You are a fitness industry analyst. Classify a company based on website content.
+HAIKU_SYSTEM = """You are a fitness industry analyst. Classify fitness companies by modality and size.
 
 Return ONLY valid JSON:
 {
-  "modality": "<one of: Boxing|Dance|Education|EMS|Golf|Gym|HIIT/Functional|Injury Prevention|Martial Arts|Other|Pilates|Spin/Indoor Cycle|Tanning|Wellness/Recovery|Yoga>",
+  "modality": "<one of: Barre|Boxing|Dance|Education|EMS|Golf|Gym|HIIT/Functional|Injury Prevention|Martial Arts|Other|Personal Training|Pilates|Spin/Indoor Cycle|Tanning|Wellness/Recovery|Yoga>",
   "modality_confidence": <0-100>,
   "brand_tier": "<SMB|MID|Enterprise|>",
   "brand_tier_confidence": <0-100>,
@@ -33,7 +33,11 @@ Return ONLY valid JSON:
 Rules:
 - SMB = 1 location, MID = 2-10, Enterprise = 11+
 - brand_tier blank if you truly cannot determine location count
-- Be honest about confidence — only score 90+ when genuinely certain"""
+- Be honest about confidence — only score 90+ when genuinely certain
+- IMPORTANT: If website content is unavailable or blocked, use your training knowledge
+  about the company name/brand to classify. Well-known brands like "Ujam Fitness",
+  "Pure Barre", "Barry's Bootcamp" etc. should be classified from brand knowledge alone.
+- Dance modality includes: dance fitness, urban dance, Zumba-style, choreographed fitness"""
 
 
 _BOT_PHRASES = ["attention required", "cloudflare", "you have been blocked",

@@ -28,16 +28,16 @@ _GEMINI_OUT = 0.30  / 1_000_000
 _MAPS_COST  = 0.049
 
 VALID_MODALITIES = [
-    "Boxing", "Dance", "Education", "EMS", "Golf", "Gym", "HIIT/Functional",
-    "Injury Prevention", "Martial Arts", "Other", "Pilates", "Spin/Indoor Cycle",
-    "Tanning", "Wellness/Recovery", "Yoga",
+    "Barre", "Boxing", "Dance", "Education", "EMS", "Golf", "Gym", "HIIT/Functional",
+    "Injury Prevention", "Martial Arts", "Other", "Personal Training", "Pilates",
+    "Spin/Indoor Cycle", "Tanning", "Wellness/Recovery", "Yoga",
 ]
 
 GEMINI_PROMPT = """You are a fitness industry analyst. Classify this company.
 
 Return ONLY valid JSON — no markdown, no explanation:
 {{
-  "modality": "<one of: Boxing|Dance|Education|EMS|Golf|Gym|HIIT/Functional|Injury Prevention|Martial Arts|Other|Pilates|Spin/Indoor Cycle|Tanning|Wellness/Recovery|Yoga>",
+  "modality": "<one of: Barre|Boxing|Dance|Education|EMS|Golf|Gym|HIIT/Functional|Injury Prevention|Martial Arts|Other|Personal Training|Pilates|Spin/Indoor Cycle|Tanning|Wellness/Recovery|Yoga>",
   "modality_confidence": <0-100>,
   "brand_tier": "<SMB|MID|Enterprise|>",
   "brand_tier_confidence": <0-100>,
