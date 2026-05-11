@@ -57,8 +57,18 @@ def _is_bot_wall(text: str) -> bool:
     return sum(1 for p in _BOT_PHRASES if p in t) >= 2
 
 
+def _is_binary(text: str) -> bool:
+    """Reject binary/corrupted responses — non-printable char ratio > 15%."""
+    if not text:
+        return False
+    sample = text[:2000]
+    non_printable = sum(1 for c in sample if ord(c) < 32 and c not in "\t\n\r")
+    return (non_printable / len(sample)) > 0.15
+
+
 def _sufficient(text: str) -> bool:
-    return bool(text) and len(text.strip()) >= MIN_CHARS and not _is_bot_wall(text)
+    return (bool(text) and len(text.strip()) >= MIN_CHARS
+            and not _is_bot_wall(text) and not _is_binary(text))
 
 
 def _build_url(company: dict) -> str:
@@ -448,49 +458,53 @@ def collect(company: dict) -> dict:
     }
 
     # ── 1. Domain validation ──────────────────────────────────────────────────
-    if not url:
+    if not url and not name:
         ctx["_skip"] = True
-        ctx["skip_reason"] = "no_domain_or_website"
+        ctx["skip_reason"] = "no_domain_or_website_or_name"
         return ctx
 
-    reachable, bot_blocked = _is_reachable(url)
-
-    if not reachable:
-        found_domain, found_title = _ddg_search(name)
-        if not found_domain:
-            ctx["_skip"] = True
-            ctx["skip_reason"] = f"unreachable ({domain}) · no search result"
-            return ctx
-        domain_stem = re.sub(r"\.\w{2,4}$", "", found_domain)
-        sim = max(
-            _name_similarity(name, domain_stem),
-            _name_similarity(name, found_title) if found_title else 0.0,
-        )
-        if sim < SIMILARITY_THRESHOLD:
-            ctx["_skip"] = True
-            ctx["skip_reason"] = (f"unreachable ({domain}) · "
-                                  f"search found {found_domain} (sim={sim:.2f})")
-            return ctx
-        ctx["domain"]            = found_domain
-        ctx["website"]           = f"https://{found_domain}"
-        ctx["_domain_corrected"] = True
-        ctx["_original_domain"]  = domain
-        url = f"https://{found_domain}"
-        log.info(f"[T0] Domain corrected: {domain} → {found_domain}")
-
-    if bot_blocked:
-        ctx["_bot_blocked"] = True
+    if url:
+        reachable, bot_blocked = _is_reachable(url)
+        if not reachable:
+            found_domain, found_title = _ddg_search(name)
+            if found_domain:
+                domain_stem = re.sub(r"\.\w{2,4}$", "", found_domain)
+                sim = max(
+                    _name_similarity(name, domain_stem),
+                    _name_similarity(name, found_title) if found_title else 0.0,
+                )
+                if sim >= SIMILARITY_THRESHOLD:
+                    ctx["domain"]            = found_domain
+                    ctx["website"]           = f"https://{found_domain}"
+                    ctx["_domain_corrected"] = True
+                    ctx["_original_domain"]  = domain
+                    url = f"https://{found_domain}"
+                    log.info(f"[T0] Domain corrected: {domain} → {found_domain}")
+                else:
+                    log.info(f"[T0] {domain} unreachable, search found {found_domain} "
+                             f"(sim={sim:.2f} < threshold) — name-only mode")
+                    url = None
+            else:
+                log.info(f"[T0] {domain} unreachable, no DDG result — name-only mode")
+                url = None
+        if bot_blocked:
+            ctx["_bot_blocked"] = True
 
     # ── 2. 4-Stage scraping ───────────────────────────────────────────────────
-    scraped_text, scrape_stage, scrape_queued, soup = _run_scraper(url, company)
-    ctx["scraped_text"]  = scraped_text
-    ctx["scrape_stage"]  = scrape_stage
-    ctx["scrape_queued"] = scrape_queued
+    if url:
+        scraped_text, scrape_stage, scrape_queued, soup = _run_scraper(url, company)
+        ctx["scraped_text"]  = scraped_text
+        ctx["scrape_stage"]  = scrape_stage
+        ctx["scrape_queued"] = scrape_queued
+    else:
+        soup = None
 
     # ── 3. Location extraction ────────────────────────────────────────────────
-    location_count, locations_snippet = _extract_locations(url, scraped_text, soup)
-    ctx["location_count"]    = location_count
-    ctx["locations_snippet"] = locations_snippet
+    if url:
+        location_count, locations_snippet = _extract_locations(
+            url, ctx["scraped_text"], soup)
+        ctx["location_count"]    = location_count
+        ctx["locations_snippet"] = locations_snippet
 
     # ── 4. Google Maps ────────────────────────────────────────────────────────
     maps_count = _google_maps_count(name)
