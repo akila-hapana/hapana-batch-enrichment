@@ -8,6 +8,7 @@ import re
 import json
 import requests
 from bs4 import BeautifulSoup
+from enrichment import BROWSER_HEADERS
 from .tier1 import (
     brand_tier_from_count, NAV_LOCATION_HINTS, TIMEOUT,
     _url, _match_strong, _match_signal
@@ -113,11 +114,22 @@ def _call_gemini(name: str, context: str) -> dict:
     return {}
 
 
+_BOT_PHRASES = ["attention required", "cloudflare", "you have been blocked",
+                "access denied", "ddos protection", "checking your browser"]
+
+
+def _is_bot_wall(text: str) -> bool:
+    t = text.lower()[:2000]
+    return sum(1 for p in _BOT_PHRASES if p in t) >= 2
+
+
 def _scrape_structured(url: str) -> str:
     """Extract structured text from a website: title + meta + headings + nav + footer."""
     try:
-        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"},
+        r = requests.get(url, timeout=TIMEOUT, headers=BROWSER_HEADERS,
                          allow_redirects=True)
+        if _is_bot_wall(r.text):
+            return "[BOT_BLOCKED: website returned a Cloudflare/bot-protection page — no content available]"
         soup = BeautifulSoup(r.text, "lxml")
         for tag in soup(["script", "style", "noscript"]):
             tag.decompose()
@@ -157,7 +169,7 @@ def _scrape_structured(url: str) -> str:
 
         if loc_url and loc_url != url:
             try:
-                r2 = requests.get(loc_url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
+                r2 = requests.get(loc_url, timeout=TIMEOUT, headers=BROWSER_HEADERS)
                 s2 = BeautifulSoup(r2.text, "lxml")
                 for tag in s2(["script","style"]):
                     tag.decompose()

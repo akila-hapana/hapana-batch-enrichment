@@ -8,6 +8,7 @@ import re
 import json
 import requests
 from bs4 import BeautifulSoup
+from enrichment import BROWSER_HEADERS
 from .tier1 import TIMEOUT, _url
 from .tier2 import VALID_MODALITIES
 
@@ -35,11 +36,22 @@ Rules:
 - Be honest about confidence — only score 90+ when genuinely certain"""
 
 
+_BOT_PHRASES = ["attention required", "cloudflare", "you have been blocked",
+                "access denied", "ddos protection", "checking your browser"]
+
+
+def _is_bot_wall(text: str) -> bool:
+    t = text.lower()[:2000]
+    return sum(1 for p in _BOT_PHRASES if p in t) >= 2
+
+
 def _deep_scrape(url: str) -> str:
     """Full page scrape — body content + about page if found."""
     try:
-        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"},
+        r = requests.get(url, timeout=TIMEOUT, headers=BROWSER_HEADERS,
                          allow_redirects=True)
+        if _is_bot_wall(r.text):
+            return ""  # Signal empty — caller will use name-only
         soup = BeautifulSoup(r.text, "lxml")
         for tag in soup(["script", "style", "noscript", "svg"]):
             tag.decompose()
@@ -72,7 +84,7 @@ def _deep_scrape(url: str) -> str:
                     from urllib.parse import urlparse
                     p = urlparse(url)
                     about_url = a["href"] if a["href"].startswith("http") else f"{p.scheme}://{p.netloc}{a['href']}"
-                    r2 = requests.get(about_url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
+                    r2 = requests.get(about_url, timeout=TIMEOUT, headers=BROWSER_HEADERS)
                     s2 = BeautifulSoup(r2.text, "lxml")
                     for t in s2(["script","style"]):
                         t.decompose()
@@ -138,7 +150,11 @@ def enrich(company: dict, previous: dict | None = None) -> dict:
 
     content = _deep_scrape(url) if url else ""
 
-    result = _call_haiku(name, content) if content or name else {}
+    if not content and url:
+        # Bot-blocked or failed scrape — tell Haiku to classify by name/brand knowledge only
+        content = "[Website content unavailable — classify based on company name and brand knowledge only]"
+
+    result = _call_haiku(name, content) if name else {}
 
     mod_conf = result.get("modality_confidence", 0)
     tier_conf = result.get("brand_tier_confidence", 0)

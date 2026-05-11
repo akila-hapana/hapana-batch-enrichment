@@ -300,6 +300,15 @@ def stop():
     return jsonify({"status": "stopping"})
 
 
+@app.route("/reset-batch", methods=["POST"])
+def reset_batch():
+    """Clear modality + brand_tier for all companies in the current batch list."""
+    companies = hubspot_client.get_list_companies(HUBSPOT_BATCH_LIST_ID)
+    ids = [c["id"] for c in companies]
+    cleared = hubspot_client.clear_enrichment(ids)
+    return jsonify({"status": "cleared", "count": cleared})
+
+
 @app.route("/stream")
 def stream():
     """SSE endpoint — browser connects here for real-time events."""

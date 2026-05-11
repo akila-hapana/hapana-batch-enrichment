@@ -53,6 +53,25 @@ def get_list_companies(list_id: str) -> list[dict]:
     return companies
 
 
+def clear_enrichment(company_ids: list[str]) -> int:
+    """Clear modality + brand_tier for a list of company IDs. Returns count cleared."""
+    cleared = 0
+    for i in range(0, len(company_ids), 100):
+        batch = company_ids[i:i + 100]
+        r = requests.post(
+            f"{BASE}/crm/v3/objects/companies/batch/update",
+            headers=_headers(),
+            json={"inputs": [
+                {"id": cid, "properties": {"modality": "", "brand_tier": ""}}
+                for cid in batch
+            ]},
+        )
+        if r.status_code in (200, 207):
+            cleared += len(batch)
+        time.sleep(0.1)
+    return cleared
+
+
 def write_enrichment(company_id: str, modality: str, brand_tier: str) -> bool:
     """Write modality + brand_tier back to a HubSpot company."""
     props = {}

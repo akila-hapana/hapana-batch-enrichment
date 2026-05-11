@@ -16,17 +16,36 @@ SEARCH_TIMEOUT = 6   # seconds for DDG search
 SIMILARITY_THRESHOLD = 0.40
 
 
-def _is_reachable(url: str) -> bool:
-    """HEAD request — fast check, follows redirects."""
+_BOT_BLOCK_PHRASES = [
+    "attention required", "cloudflare", "you have been blocked",
+    "access denied", "enable javascript", "ddos protection",
+    "checking your browser", "please wait",
+]
+
+
+def is_bot_blocked(text: str) -> bool:
+    """Returns True if the page looks like a bot-protection wall."""
+    t = text.lower()[:2000]
+    return sum(1 for p in _BOT_BLOCK_PHRASES if p in t) >= 2
+
+
+def _is_reachable(url: str) -> tuple[bool, bool]:
+    """
+    Returns (reachable, bot_blocked).
+    403 counts as reachable — the site exists, it's just blocking scrapers.
+    """
     try:
         r = requests.head(
             url, timeout=REACH_TIMEOUT,
             allow_redirects=True,
             headers={"User-Agent": "Mozilla/5.0"},
         )
-        return r.status_code < 400
+        # 403 = real site, just blocking bots
+        if r.status_code < 400 or r.status_code == 403:
+            return True, r.status_code == 403
+        return False, False
     except Exception:
-        # Try GET fallback (some servers block HEAD)
+        # HEAD not supported — try GET
         try:
             r = requests.get(
                 url, timeout=REACH_TIMEOUT,
@@ -34,10 +53,13 @@ def _is_reachable(url: str) -> bool:
                 headers={"User-Agent": "Mozilla/5.0"},
                 stream=True,
             )
+            chunk = next(r.iter_content(4096), b"").decode("utf-8", errors="ignore")
             r.close()
-            return r.status_code < 400
+            blocked = is_bot_blocked(chunk) or r.status_code == 403
+            ok = r.status_code < 400 or blocked
+            return ok, blocked
         except Exception:
-            return False
+            return False, False
 
 
 def _name_similarity(a: str, b: str) -> float:
@@ -107,8 +129,13 @@ def check(company: dict) -> dict:
         return {**company, "_skip": True, "skip_reason": "no_domain_or_website"}
 
     # ── 1. Reachability check ──
-    if _is_reachable(url):
-        return company  # All good — proceed to T1
+    reachable, bot_blocked = _is_reachable(url)
+
+    if reachable:
+        result = dict(company)
+        if bot_blocked:
+            result["_bot_blocked"] = True  # signal to scrapers not to waste time
+        return result
 
     # ── 2. Domain unreachable — one DuckDuckGo search ──
     found_domain, found_title = _ddg_search(name)

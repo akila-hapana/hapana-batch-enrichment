@@ -6,6 +6,7 @@ No AI calls, no paid APIs.
 import re
 import requests
 from bs4 import BeautifulSoup
+from enrichment import BROWSER_HEADERS
 
 TIMEOUT = 8
 
@@ -194,10 +195,20 @@ def _match_signal(text: str) -> str | None:
     return None
 
 
+def _is_bot_wall(text: str) -> bool:
+    t = text.lower()[:2000]
+    phrases = ["attention required", "cloudflare", "you have been blocked",
+               "access denied", "enable javascript", "ddos protection",
+               "checking your browser"]
+    return sum(1 for p in phrases if p in t) >= 2
+
+
 def _scrape_head(url: str) -> dict:
     try:
-        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"},
+        r = requests.get(url, timeout=TIMEOUT, headers=BROWSER_HEADERS,
                          allow_redirects=True)
+        if _is_bot_wall(r.text):
+            return {"_bot_blocked": True}
         soup = BeautifulSoup(r.text[:10000], "lxml")
         title = (soup.title.string or "").strip() if soup.title else ""
         meta = " ".join(
@@ -233,7 +244,7 @@ def _count_locations(url: str, head: dict) -> int | None:
             parsed = urlparse(url)
             href = nav_links[0]
             loc_url = href if href.startswith("http") else f"{parsed.scheme}://{parsed.netloc}{href}"
-            r2 = requests.get(loc_url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
+            r2 = requests.get(loc_url, timeout=TIMEOUT, headers=BROWSER_HEADERS)
             locations_page_html = r2.text
         except Exception:
             pass
@@ -293,7 +304,11 @@ def enrich(company: dict) -> dict | None:
 
     # --- Head scrape ---
     head = _scrape_head(url) if url else {}
-    combined_text = f"{name} {head.get('title','')} {head.get('meta','')} {head.get('h1','')}"
+    if head.get("_bot_blocked"):
+        # Cloudflare wall — only use company name for keyword matching
+        combined_text = name
+    else:
+        combined_text = f"{name} {head.get('title','')} {head.get('meta','')} {head.get('h1','')}"
 
     # --- Modality: whitelist wins, then strong keyword, then signal ---
     if whitelist_modality:
