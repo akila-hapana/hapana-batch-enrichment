@@ -238,9 +238,11 @@ def _google_maps_location_count(company_name: str, domain: str) -> int | None:
         return None
 
 
-def enrich(company: dict, tier1_result: dict | None = None) -> dict | None:
+def enrich(company: dict, tier1_result: dict | None = None,
+           scraped_text: str = "") -> dict | None:
     """
     Returns result if BOTH modality_confidence >= 90 AND brand_tier_confidence >= 90.
+    scraped_text: pre-scraped content from scraper.py (used instead of website scrape).
     Otherwise returns None to escalate to Tier 3.
     """
     name = (company.get("name") or "").strip()
@@ -270,8 +272,10 @@ def enrich(company: dict, tier1_result: dict | None = None) -> dict | None:
         else:
             parts.append("(Google Maps: 1 location — likely SMB)")
 
-    # Website structured scrape
-    if url:
+    # Website content — use pre-scraped text if available, otherwise scrape
+    if scraped_text:
+        parts.append(scraped_text[:3000])
+    elif url:
         structured = _scrape_structured(url)
         if structured:
             parts.append(structured)

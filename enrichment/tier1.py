@@ -294,9 +294,10 @@ def brand_tier_from_count(count: int | None) -> str | None:
     return "Enterprise"
 
 
-def enrich(company: dict) -> dict | None:
+def enrich(company: dict, scraped_text: str = "") -> dict | None:
     """
     Returns result dict with confidence scores, or None to escalate.
+    scraped_text: pre-scraped content from scraper.py (all stages already attempted).
     Only returns if modality_confidence >= 90 AND brand_tier_confidence >= 90.
     """
     name = (company.get("name") or "").strip()
@@ -313,15 +314,18 @@ def enrich(company: dict) -> dict | None:
     # --- Brand whitelist match (modality only, 100% confidence) ---
     whitelist_modality = BRAND_WHITELIST.get(domain)
 
-    # --- Head scrape ---
-    head = _scrape_head(url) if url else {}
-    if head.get("_bot_blocked"):
-        # Cloudflare wall — only use company name for keyword matching
-        combined_text = name
+    # --- Use pre-scraped text; fall back to scraping head if not provided ---
+    if scraped_text:
+        combined_text = f"{name} {scraped_text[:1000]}"
+        head = {}
     else:
-        combined_text = f"{name} {head.get('title','')} {head.get('meta','')} {head.get('h1','')}"
+        head = _scrape_head(url) if url else {}
+        if head.get("_bot_blocked"):
+            combined_text = name
+        else:
+            combined_text = f"{name} {head.get('title','')} {head.get('meta','')} {head.get('h1','')}"
 
-    # --- Modality: whitelist wins, then strong keyword, then signal ---
+    # --- Modality: whitelist wins, then strong keyword ---
     if whitelist_modality:
         modality = whitelist_modality
         mod_confidence = 100
@@ -330,21 +334,17 @@ def enrich(company: dict) -> dict | None:
         mod_confidence = 95 if modality else 0
 
     if not modality:
-        # Weak signal — not enough for Tier 1
         return None
 
-    # --- Location count for brand_tier ---
+    # --- Location count for brand_tier (still scrapes locations page) ---
     loc_count = _count_locations(url, head) if url else None
     brand_tier = brand_tier_from_count(loc_count)
 
-    # Confidence in brand_tier
     if brand_tier is None:
-        # Can't determine → escalate
         return None
 
     tier_confidence = 90 if loc_count and loc_count > 1 else 85
 
-    # Gate: require 90% on both
     if mod_confidence >= 90 and tier_confidence >= 90:
         return {"modality": modality, "brand_tier": brand_tier,
                 "modality_confidence": mod_confidence,
@@ -352,5 +352,4 @@ def enrich(company: dict) -> dict | None:
                 "location_count": loc_count,
                 "tier": 1, "method": "keyword+location_scrape"}
 
-    # Partial: pass modality to next tier so it doesn't repeat keyword work
     return None

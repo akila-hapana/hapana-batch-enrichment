@@ -12,7 +12,7 @@ from flask import Flask, Response, render_template, request, jsonify
 import google.cloud.firestore as firestore
 
 from enrichment import hubspot_client
-from enrichment import tier0, tier1, tier2, tier3
+from enrichment import tier0, tier1, tier2, tier3, scraper
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -81,6 +81,7 @@ def process_company(company: dict) -> dict:
         return {"modality": "Other", "brand_tier": "",
                 "modality_confidence": 0, "brand_tier_confidence": 0,
                 "cost_usd": 0.0, "tier": 0, "method": "skipped_invalid_domain",
+                "scrape_stage": 0, "scrape_queued": False,
                 "id": cid}
 
     if t0.get("_domain_corrected"):
@@ -90,12 +91,34 @@ def process_company(company: dict) -> dict:
     else:
         log_terminal(f"[T0] ✓ Domain reachable — proceeding", "success")
 
+    # --- Pre-scrape: run once, pass to all tiers ---
+    scrape_url = company.get("website") or (f"https://{company['domain']}" if company.get("domain") else "")
+    log_terminal(f"[Scraper] Extracting website content...")
+    scrape_result = scraper.scrape(company)
+    scraped_text  = scrape_result["content"]
+    scrape_stage  = scrape_result["stage"]
+    scrape_queued = scrape_result["queued"]
+
+    stage_labels = {0: "no content", 1: "static HTML", 2: "Jina Reader",
+                    3: "Playwright headless", 4: "local Chrome"}
+    if scraped_text:
+        log_terminal(f"[Scraper] ✓ Stage {scrape_stage} ({stage_labels.get(scrape_stage,'?')}) "
+                     f"— {len(scraped_text)} chars extracted", "success")
+    elif scrape_queued:
+        log_terminal(f"[Scraper] Local machine offline — queued for Stage 4 when machine wakes", "warn")
+        log_terminal(f"[Scraper] Continuing with name-only classification", "warn")
+    else:
+        log_terminal(f"[Scraper] All stages returned no content — using name-only", "warn")
+
+    emit({"type": "scrape_done", "id": cid, "stage": scrape_stage,
+          "queued": scrape_queued, "chars": len(scraped_text)})
+
     # --- Tier 1: Free, deterministic ---
     emit({"type": "tier_attempt", "id": cid, "tier": 1,
           "method": "known brand lookup · keyword match · location scrape"})
     log_terminal(f"[T1] Checking known brands and keyword patterns...")
 
-    result1 = tier1.enrich(company)
+    result1 = tier1.enrich(company, scraped_text=scraped_text)
 
     if result1 and not result1.get("_partial"):
         mc = result1.get("modality_confidence", 0)
@@ -106,6 +129,8 @@ def process_company(company: dict) -> dict:
             log_terminal(f"[T1] ✓ Both ≥{CONFIDENCE_THRESHOLD}% — resolved at Tier 1", "success")
             result1["id"] = cid
             result1["cost_usd"] = 0.0
+            result1["scrape_stage"] = scrape_stage
+            result1["scrape_queued"] = scrape_queued
             return result1
         else:
             log_terminal(f"[T1] Confidence too low (need {CONFIDENCE_THRESHOLD}% each) — escalating to T2", "warn")
@@ -121,7 +146,7 @@ def process_company(company: dict) -> dict:
     log_terminal(f"[T2] Searching Google Maps for '{name}' to estimate location count...")
     log_terminal(f"[T2] Sending structured context to Gemini 1.5 Flash (Vertex AI)...")
 
-    result2 = tier2.enrich(company, tier1_result=result1)
+    result2 = tier2.enrich(company, tier1_result=result1, scraped_text=scraped_text)
 
     if result2 and not result2.get("_partial"):
         mc = result2.get("modality_confidence", 0)
@@ -133,6 +158,8 @@ def process_company(company: dict) -> dict:
             log_terminal(f"[T2] ✓ Both ≥{CONFIDENCE_THRESHOLD}% — resolved at Tier 2", "success")
             result2["id"] = cid
             result2["cost_usd"] = total_cost
+            result2["scrape_stage"] = scrape_stage
+            result2["scrape_queued"] = scrape_queued
             return result2
         else:
             reasoning = result2.get("reasoning", "")
@@ -147,7 +174,7 @@ def process_company(company: dict) -> dict:
     log_terminal(f"[T3] Deep scraping full page content...")
     log_terminal(f"[T3] Sending to Claude Haiku for final classification...")
 
-    result3 = tier3.enrich(company, previous=result2 or result1)
+    result3 = tier3.enrich(company, previous=result2 or result1, scraped_text=scraped_text)
     total_cost += result3.get("cost_usd", 0.0)
 
     mc = result3.get("modality_confidence", 0)
@@ -162,6 +189,8 @@ def process_company(company: dict) -> dict:
 
     result3["id"] = cid
     result3["cost_usd"] = total_cost
+    result3["scrape_stage"] = scrape_stage
+    result3["scrape_queued"] = scrape_queued
     return result3
 
 
@@ -227,6 +256,8 @@ def run_batch(companies: list[dict], batch_id: str):
                       "modality": modality, "brand_tier": brand_tier,
                       "tier": result.get("tier"), "method": result.get("method"),
                       "cost_usd": round(cost, 6),
+                      "scrape_stage": result.get("scrape_stage", 0),
+                      "scrape_queued": result.get("scrape_queued", False),
                       "hubspot_written": ok})
                 enriched_count += 1
 

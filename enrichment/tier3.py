@@ -144,18 +144,23 @@ def _call_haiku(name: str, content: str) -> dict:
     return {}
 
 
-def enrich(company: dict, previous: dict | None = None) -> dict:
+def enrich(company: dict, previous: dict | None = None,
+           scraped_text: str = "") -> dict:
     """
     Always returns a final result.
+    scraped_text: pre-scraped content from scraper.py (preferred over self-scraping).
     If BOTH confidences < 90 → modality = "Other", brand_tier = "" (blank).
     """
     name = (company.get("name") or "").strip()
     url = _url(company)
 
-    content = _deep_scrape(url) if url else ""
+    # Use pre-scraped text if provided, otherwise attempt deep scrape
+    if scraped_text:
+        content = scraped_text
+    else:
+        content = _deep_scrape(url) if url else ""
 
-    if not content and url:
-        # Bot-blocked or failed scrape — tell Haiku to classify by name/brand knowledge only
+    if not content:
         content = "[Website content unavailable — classify based on company name and brand knowledge only]"
 
     result = _call_haiku(name, content) if name else {}

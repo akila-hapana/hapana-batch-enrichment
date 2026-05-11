@@ -177,7 +177,13 @@
     .tier-badge.t1 { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
     .tier-badge.t2 { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
     .tier-badge.t3 { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
-    .tier-badge.t0 { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+    .tier-badge.t0  { background: #f8fafc; color: #64748b; border: 1px solid #e2e8f0; }
+    .scrape-badge   { display:inline-flex;align-items:center;padding:1px 6px;border-radius:99px;font-size:10px;font-weight:500; }
+    .scrape-s1      { background:#f0fdf4;color:#15803d; }
+    .scrape-s2      { background:#eff6ff;color:#1d4ed8; }
+    .scrape-s3      { background:#faf5ff;color:#6d28d9; }
+    .scrape-s4      { background:#fff7ed;color:#c2410c; }
+    .scrape-queued  { background:#fef3c7;color:#b45309; }
 
     .processing-dot {
       width: 8px; height: 8px; border-radius: 50%; background: #3b82f6;
@@ -697,7 +703,7 @@
     return tr;
   }
 
-  function makeEnrichedRow(id, name, url, domain, brandTier, modality, tier, costUsd) {
+  function makeEnrichedRow(id, name, url, domain, brandTier, modality, tier, costUsd, scrapeStage, scrapeQueued) {
     const tr = document.createElement("tr");
     tr.id = `e-${id}`;
     tr.className = "row-in";
@@ -708,6 +714,18 @@
     const brandHtml = brandTier
       ? `<span class="brand-chip ${brandTier==="SMB"?"smb":brandTier==="MID"?"mid":"ent"}">${brandTier}</span>`
       : `<span class="blank">—</span>`;
+
+    // Scrape stage badge
+    let scrapeBadge = "";
+    if (scrapeQueued) {
+      scrapeBadge = `<span class="scrape-badge scrape-queued" title="Queued for local Chrome (Stage 4)">⏳ Queued</span>`;
+    } else if (scrapeStage > 0) {
+      const stageLabel = {1:"S1",2:"S2",3:"S3",4:"S4"}[scrapeStage] || `S${scrapeStage}`;
+      const stageCls = `scrape-s${scrapeStage}`;
+      const stageTitle = {1:"Static HTML",2:"Jina Reader",3:"Playwright",4:"Local Chrome"}[scrapeStage] || "";
+      scrapeBadge = `<span class="scrape-badge ${stageCls}" title="${stageTitle}">${stageLabel}</span>`;
+    }
+
     const costHtml = tier === 0
       ? `<span style="color:#94a3b8;font-size:11px;">Skipped</span>`
       : tier === 1
@@ -721,7 +739,7 @@
       <td class="em">${esc(domain||"—")}</td>
       <td>${brandHtml}${tierHtml}</td>
       <td><span class="mod-badge ${modClass}">${esc(modality||"—")}</span></td>
-      <td>${costHtml}</td>`;
+      <td style="white-space:nowrap;">${costHtml} ${scrapeBadge}</td>`;
     return tr;
   }
 
@@ -770,7 +788,7 @@
       const emptyRow = etbody.querySelector(".empty-state");
       if (emptyRow) emptyRow.closest("tr").remove();
 
-      const row = makeEnrichedRow(ev.id, ev.name, url, domain, ev.brand_tier, ev.modality, ev.tier, ev.cost_usd || 0);
+      const row = makeEnrichedRow(ev.id, ev.name, url, domain, ev.brand_tier, ev.modality, ev.tier, ev.cost_usd || 0, ev.scrape_stage || 0, ev.scrape_queued || false);
       etbody.insertBefore(row, etbody.firstChild);
 
       tierCounts[ev.tier] = (tierCounts[ev.tier]||0) + 1;
