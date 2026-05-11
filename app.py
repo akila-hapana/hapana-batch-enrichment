@@ -249,7 +249,7 @@ def run_batch(companies: list[dict], batch_id: str):
                 # Write back to HubSpot
                 ok = hubspot_client.write_enrichment(cid, modality, brand_tier)
 
-                # Save to Firestore
+                # Save to Firestore — full audit trail (HubSpot only gets modality + brand_tier)
                 db.collection("enrichment_batches").document(batch_id)\
                   .collection("companies").document(cid).set({
                       "name": company["name"],
@@ -258,6 +258,14 @@ def run_batch(companies: list[dict], batch_id: str):
                       "brand_tier": brand_tier,
                       "tier": result.get("tier"),
                       "method": result.get("method"),
+                      "business_model": result.get("business_model", ""),
+                      "reasoning": result.get("reasoning", ""),
+                      "modality_confidence": result.get("modality_confidence", 0),
+                      "brand_tier_confidence": result.get("brand_tier_confidence", 0),
+                      "location_count": result.get("location_count"),
+                      "maps_count": result.get("maps_count"),
+                      "apollo_industry": result.get("apollo_industry", ""),
+                      "scrape_stage": result.get("scrape_stage", 0),
                       "hubspot_written": ok,
                       "enriched_at": firestore.SERVER_TIMESTAMP,
                   })

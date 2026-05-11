@@ -497,7 +497,16 @@ def collect(company: dict) -> dict:
     if maps_count is not None:
         ctx["maps_count"] = maps_count
         ctx["cost_usd"]  += _MAPS_COST
-        log.info(f"[T0] Maps: {maps_count} listings for '{name}'")
+        # Reliability check: high Maps count with no website location evidence
+        # likely means partner/class listings (e.g. Ujam, Zumba), not owned locations.
+        # Flag this so T2/T3 treat the count with appropriate scepticism.
+        if maps_count >= 11 and (location_count is None or location_count < 3) and not locations_snippet:
+            ctx["maps_count_reliable"] = False
+            log.info(f"[T0] Maps: {maps_count} listings for '{name}' — flagged unreliable "
+                     f"(no website location corroboration)")
+        else:
+            ctx["maps_count_reliable"] = True
+            log.info(f"[T0] Maps: {maps_count} listings for '{name}'")
 
     # ── 5. Apollo ─────────────────────────────────────────────────────────────
     apollo = _apollo_enrich(domain)

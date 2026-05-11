@@ -20,27 +20,39 @@ VALID_MODALITIES = [
     "Wellness/Recovery", "Yoga",
 ]
 
-HAIKU_SYSTEM = """You are a fitness industry analyst. Classify fitness companies by modality and size.
+HAIKU_SYSTEM = """You are a fitness industry analyst. Classify fitness companies in two steps.
+
+STEP 1 — Determine business model:
+  OPERATOR    = Owns/operates physical fitness studios or gyms at its OWN locations
+  LICENSOR    = Licenses a fitness format/program to OTHER gyms — does NOT own locations
+  ASSOCIATION = Industry trade org, certification body, professional development for fitness pros
+  NON_FITNESS = No meaningful fitness connection
+
+STEP 2 — Apply rules by model:
+  OPERATOR    → choose modality + count OWNED locations for brand_tier
+  LICENSOR    → choose fitness modality, brand_tier = "" (no owned locations)
+  ASSOCIATION → modality = "Education", brand_tier = ""
+  NON_FITNESS → modality = "Other", brand_tier = ""
 
 Return ONLY valid JSON:
 {
+  "business_model": "<Operator|Licensor|Association|Non_fitness>",
   "modality": "<one of: Barre|Boxing|Dance|Education|EMS|Golf|Gym|HIIT/Functional|Injury Prevention|Martial Arts|Other|Personal Training|Pilates|Spin/Indoor Cycle|Tanning|Wellness/Recovery|Yoga>",
   "modality_confidence": <0-100>,
   "brand_tier": "<SMB|MID|Enterprise|>",
   "brand_tier_confidence": <0-100>,
-  "location_count": <integer or null>,
-  "reasoning": "<one sentence>"
+  "location_count": <integer or null — OWNED locations only>,
+  "reasoning": "<one sentence explaining key signals>"
 }
 
-Rules:
-- SMB = 1 location, MID = 2-10, Enterprise = 11+
-- brand_tier blank if you truly cannot determine location count
+Critical rules:
+- SMB = 1 owned location, MID = 2-10, Enterprise = 11+ — only for OPERATOR type
+- brand_tier blank if you truly cannot determine owned location count
 - Be honest about confidence — only score 90+ when genuinely certain
-- IMPORTANT: If website content is unavailable or blocked, use your training knowledge
-  about the company name/brand to classify. Well-known brands like "Ujam Fitness",
-  "Pure Barre", "Barry's Bootcamp" etc. should be classified from brand knowledge alone.
-- Dance modality includes: dance fitness, urban dance, Zumba-style, choreographed fitness
-- Personal Training: private/1-on-1 studios, PT-only facilities"""
+- If website content is unavailable, use training knowledge about the brand
+- Dance includes: dance fitness, urban dance, Zumba-style, choreographed fitness
+- Personal Training includes: mobile PT, in-home training, "we come to you", virtual coaching
+- Education includes: fitness associations, certification bodies, industry trade orgs"""
 
 
 def _call_haiku(name: str, content: str) -> dict:
@@ -72,7 +84,9 @@ def _call_haiku(name: str, content: str) -> dict:
             result   = json.loads(m.group())
             mod      = result.get("modality", "")
             tier_val = result.get("brand_tier", "")
+            biz      = result.get("business_model", "")
             return {
+                "business_model":        biz if biz in ("Operator","Licensor","Association","Non_fitness") else "",
                 "modality":              mod if mod in VALID_MODALITIES else "",
                 "modality_confidence":   int(result.get("modality_confidence", 0)),
                 "brand_tier":            tier_val if tier_val in ("SMB", "MID", "Enterprise", "") else "",
@@ -124,6 +138,7 @@ def enrich(t0: dict, previous: dict | None = None) -> dict:
         tier_conf  = 0
 
     return {
+        "business_model":        result.get("business_model", ""),
         "modality":              modality,
         "brand_tier":            brand_tier,
         "modality_confidence":   mod_conf,

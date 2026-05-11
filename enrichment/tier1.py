@@ -131,6 +131,10 @@ STRONG_KEYWORDS = {
         "personal training studio", "personal training gym",
         "personal trainer studio", "private training studio",
         "one on one training", "1-on-1 training", "pt studio",
+        "mobile personal training", "in-home personal training",
+        "in-home training", "we come to you", "travel to clients",
+        "home fitness training", "virtual personal training",
+        "online personal trainer",
     ],
     "Wellness/Recovery": [
         "float tank", "flotation centre", "cryotherapy", "infrared sauna",
@@ -141,6 +145,13 @@ STRONG_KEYWORDS = {
     ],
     "Golf": [
         "golf academy", "golf studio", "indoor golf",
+    ],
+    "Education": [
+        "fitness association", "fitness federation", "fitness professionals",
+        "instructor certification", "instructor training program",
+        "fitness licensing", "licensing program fitness",
+        "fitness industry association", "fitness trade association",
+        "certified fitness professionals", "fitness certification body",
     ],
 }
 
@@ -158,14 +169,18 @@ SIGNAL_KEYWORDS = {
     "Dance":             ["dance", "ballet", "zumba", "urban dance"],
     "Barre":             ["barre"],
     "Personal Training": ["personal training", "personal trainer",
-                          "private trainer", "1-on-1", "one-on-one"],
+                          "private trainer", "1-on-1", "one-on-one",
+                          "mobile training", "in-home", "we come to you",
+                          "virtual coaching", "online coach"],
     "Wellness/Recovery": ["wellness", "recovery", "float", "cryotherapy",
                           "infrared"],
     "EMS":               ["ems"],
     "Golf":              ["golf"],
     "Tanning":           ["tanning salon", "spray tan", "solarium"],
     "Education":         ["fitness education", "fitness academy",
-                          "personal training course"],
+                          "personal training course", "association",
+                          "federation", "certification", "licensing",
+                          "fitness professionals", "instructor program"],
 }
 
 

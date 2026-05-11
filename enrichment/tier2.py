@@ -23,22 +23,41 @@ VALID_MODALITIES = [
     "Wellness/Recovery", "Yoga",
 ]
 
-GEMINI_PROMPT = """You are a fitness industry analyst. Classify this company.
+GEMINI_PROMPT = """You are a fitness industry analyst. Classify this company in two steps.
+
+STEP 1 — Determine business model (critical — this drives everything else):
+  OPERATOR    = Owns/operates physical fitness studios, gyms, or classes at its OWN locations
+  LICENSOR    = Licenses a fitness format/program to OTHER gyms (e.g. Les Mills, Ujam, Zumba) — does NOT own locations
+  ASSOCIATION = Industry trade org, certification body, professional development for fitness pros (e.g. IHRSA, FBA, NASM, ACE)
+  NON_FITNESS = No meaningful fitness connection (tech company, marketing agency, insurance broker, university admin, etc.)
+
+STEP 2 — Apply classification rules by model:
+  OPERATOR    → choose modality from list below + count OWNED locations for brand_tier
+  LICENSOR    → choose fitness modality, brand_tier = "" (they have no owned locations)
+  ASSOCIATION → modality = "Education", brand_tier = ""
+  NON_FITNESS → modality = "Other", brand_tier = ""
+
+⚠ GOOGLE MAPS WARNING: A high Maps listing count does NOT always mean the company owns those locations.
+  Instructor-licensing programs (Ujam, Zumba, Les Mills) show up in Maps at partner gyms worldwide.
+  If Maps count is high BUT the website has no /locations page and no owned address patterns →
+  those are partner/class listings, NOT owned locations. Do NOT use Maps count alone for Enterprise.
+  Only assign Enterprise if you have clear evidence of 11+ company-owned locations.
 
 Return ONLY valid JSON — no markdown, no explanation:
 {{
+  "business_model": "<Operator|Licensor|Association|Non_fitness>",
   "modality": "<one of: Barre|Boxing|Dance|Education|EMS|Golf|Gym|HIIT/Functional|Injury Prevention|Martial Arts|Other|Personal Training|Pilates|Spin/Indoor Cycle|Tanning|Wellness/Recovery|Yoga>",
   "modality_confidence": <0-100>,
   "brand_tier": "<SMB|MID|Enterprise|>",
   "brand_tier_confidence": <0-100>,
-  "location_count": <integer or null>,
-  "reasoning": "<one sentence>"
+  "location_count": <integer or null — OWNED locations only, null if unknown>,
+  "reasoning": "<one sentence explaining the key signals that determined business model + modality>"
 }}
 
-Rules:
-- SMB = 1 location, MID = 2-10 locations, Enterprise = 11+ locations
-- brand_tier blank ("") if you cannot determine location count
-- Be honest about confidence — only score 90+ when genuinely certain
+Additional modality notes:
+- Personal Training includes: mobile/in-home PT, virtual coaching, "we come to you" services
+- Education includes: fitness associations, certification bodies, industry trade orgs, licensing programs
+- SMB = 1 owned location, MID = 2-10, Enterprise = 11+ — only applies to OPERATOR business model
 
 Company: {name}
 {context}"""
@@ -86,10 +105,12 @@ def _call_gemini(name: str, context: str) -> dict:
                  usage.get("candidatesTokenCount", 0) * _GEMINI_OUT)
         m = re.search(r'\{.*\}', text, re.DOTALL)
         if m:
-            result = json.loads(m.group())
+            result   = json.loads(m.group())
             mod      = result.get("modality", "")
             tier_val = result.get("brand_tier", "")
+            biz      = result.get("business_model", "")
             return {
+                "business_model":        biz if biz in ("Operator","Licensor","Association","Non_fitness") else "",
                 "modality":              mod if mod in VALID_MODALITIES else "",
                 "modality_confidence":   int(result.get("modality_confidence", 0)),
                 "brand_tier":            tier_val if tier_val in ("SMB", "MID", "Enterprise", "") else "",
@@ -126,13 +147,22 @@ def enrich(t0: dict, tier1_result: dict | None = None) -> dict | None:
 
     # Google Maps location signal
     if maps_count is not None:
-        parts.append(f"Google Maps listings for '{name}': {maps_count}")
-        if maps_count >= 11:
-            parts.append("(Maps: 11+ locations — likely Enterprise)")
-        elif maps_count >= 2:
-            parts.append(f"(Maps: {maps_count} locations — likely MID)")
+        reliable = t0.get("maps_count_reliable", True)
+        if reliable:
+            parts.append(f"Google Maps listings for '{name}': {maps_count}")
+            if maps_count >= 11:
+                parts.append("(Maps: 11+ locations — likely Enterprise)")
+            elif maps_count >= 2:
+                parts.append(f"(Maps: {maps_count} locations — likely MID)")
+            else:
+                parts.append("(Maps: 1 location — likely SMB)")
         else:
-            parts.append("(Maps: 1 location — likely SMB)")
+            parts.append(
+                f"Google Maps returned {maps_count} listings for '{name}' — "
+                f"WARNING: these are likely partner/class listings at other gyms, NOT owned locations. "
+                f"Do NOT use this count to determine brand_tier or classify as Enterprise. "
+                f"Look only at the website content for owned location evidence."
+            )
 
     # Website-based location count
     if location_count is not None:
@@ -161,6 +191,7 @@ def enrich(t0: dict, tier1_result: dict | None = None) -> dict | None:
 
     if mod_conf >= 90 and tier_conf >= 90 and result.get("modality"):
         return {
+            "business_model":        result.get("business_model", ""),
             "modality":              result["modality"],
             "brand_tier":            result.get("brand_tier", ""),
             "modality_confidence":   mod_conf,
@@ -173,6 +204,7 @@ def enrich(t0: dict, tier1_result: dict | None = None) -> dict | None:
 
     return {
         "_partial":              True,
+        "business_model":        result.get("business_model", ""),
         "modality":              result.get("modality", ""),
         "brand_tier":            result.get("brand_tier", ""),
         "modality_confidence":   mod_conf,
