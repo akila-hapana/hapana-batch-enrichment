@@ -1,20 +1,13 @@
 """
-Tier 1 — Free, deterministic, rule-based.
-Only returns a result when confidence >= 90% in BOTH modality AND brand_tier.
-No AI calls, no paid APIs.
+Tier 1 — Pure keyword classification. No HTTP calls.
+Reads scraped_text, location_count, maps_count from T0 context.
+Only returns when BOTH modality_confidence >= 90 AND brand_tier_confidence >= 90.
 """
-import re
-import requests
-from bs4 import BeautifulSoup
-from enrichment import BROWSER_HEADERS
-
-TIMEOUT = 8
+import os as _os
 
 # ---------------------------------------------------------------------------
 # Known brands — loaded from data/brand_whitelist.txt (domain | modality)
-# These give 100% modality confidence. Brand tier still needs location scrape.
 # ---------------------------------------------------------------------------
-import os as _os
 
 def _load_whitelist() -> dict[str, str]:
     path = _os.path.join(_os.path.dirname(__file__), "..", "data", "brand_whitelist.txt")
@@ -27,17 +20,21 @@ def _load_whitelist() -> dict[str, str]:
                     continue
                 if "|" in line:
                     domain, modality = line.split("|", 1)
-                    domain = domain.strip().lower().replace("www.", "").replace("http://", "").replace("https://", "")
+                    domain = (domain.strip().lower()
+                              .replace("www.", "")
+                              .replace("http://", "")
+                              .replace("https://", ""))
                     brands[domain] = modality.strip()
     except Exception:
         pass
     return brands
 
-BRAND_WHITELIST = _load_whitelist()  # domain → modality (321 brands from existing app)
 
-# Known brands with BOTH modality AND brand_tier (Enterprise chains only)
+BRAND_WHITELIST = _load_whitelist()
+
+# Known brands with BOTH modality AND brand_tier (Enterprise chains)
 KNOWN_BRANDS = {
-    # Gym / General Fitness
+    # Gym
     "anytimefitness.com":     ("Gym", "Enterprise"),
     "planetfitness.com":      ("Gym", "Enterprise"),
     "snapfitness.com":        ("Gym", "Enterprise"),
@@ -52,7 +49,6 @@ KNOWN_BRANDS = {
     "goldsgym.com":           ("Gym", "Enterprise"),
     "lafitness.com":          ("Gym", "Enterprise"),
     "worldgym.com":           ("Gym", "Enterprise"),
-    "fitnessworld.com":       ("Gym", "Enterprise"),
     "virginactive.com":       ("Gym", "Enterprise"),
     "virginactive.com.au":    ("Gym", "Enterprise"),
     "thefitnessgroup.com.au": ("Gym", "Enterprise"),
@@ -85,7 +81,7 @@ KNOWN_BRANDS = {
     # Spin
     "soulcycle.com":          ("Spin/Indoor Cycle", "Enterprise"),
     "cyclebar.com":           ("Spin/Indoor Cycle", "Enterprise"),
-    # Wellness / Recovery
+    # Wellness
     "floatation.com.au":      ("Wellness/Recovery", "SMB"),
     # Boxing / Martial Arts
     "titleboxingclub.com":    ("Boxing", "Enterprise"),
@@ -94,10 +90,7 @@ KNOWN_BRANDS = {
     "graceacademy.com.au":    ("Martial Arts", "SMB"),
 }
 
-# ---------------------------------------------------------------------------
-# Strong modality keywords — each term gives ≥90% modality confidence
-# (keyword must appear as a standalone word/phrase in the name)
-# ---------------------------------------------------------------------------
+# Strong keywords — each gives ≥90% modality confidence on its own
 STRONG_KEYWORDS = {
     "HIIT/Functional": [
         "crossfit", "f45", "orange theory", "orangetheory", "9round",
@@ -151,41 +144,29 @@ STRONG_KEYWORDS = {
     ],
 }
 
-# Weaker keywords — give modality signal but not ≥90% alone
+# Weaker keywords — signal but not ≥90% alone
 SIGNAL_KEYWORDS = {
-    "Gym":               ["gym", "fitness", "health club", "fitness center", "fitness centre", "athletic club"],
+    "Gym":               ["gym", "fitness", "health club", "fitness center",
+                          "fitness centre", "athletic club"],
     "HIIT/Functional":   ["crossfit", "bootcamp", "hiit", "functional"],
     "Yoga":              ["yoga"],
     "Pilates":           ["pilates"],
-    "Martial Arts":      ["mma", "martial arts", "jiu jitsu", "muay thai", "kickboxing", "karate", "taekwondo"],
+    "Martial Arts":      ["mma", "martial arts", "jiu jitsu", "muay thai",
+                          "kickboxing", "karate", "taekwondo"],
     "Boxing":            ["boxing"],
     "Spin/Indoor Cycle": ["spin", "cycling studio", "indoor cycle"],
     "Dance":             ["dance", "ballet", "zumba", "urban dance"],
     "Barre":             ["barre"],
-    "Personal Training": ["personal training", "personal trainer", "private trainer", "1-on-1", "one-on-one"],
-    "Wellness/Recovery": ["wellness", "recovery", "float", "cryotherapy", "infrared"],
+    "Personal Training": ["personal training", "personal trainer",
+                          "private trainer", "1-on-1", "one-on-one"],
+    "Wellness/Recovery": ["wellness", "recovery", "float", "cryotherapy",
+                          "infrared"],
     "EMS":               ["ems"],
     "Golf":              ["golf"],
     "Tanning":           ["tanning salon", "spray tan", "solarium"],
-    "Education":         ["fitness education", "fitness academy", "personal training course"],
+    "Education":         ["fitness education", "fitness academy",
+                          "personal training course"],
 }
-
-NAV_LOCATION_HINTS = [
-    "location", "locations", "studio", "studios", "find us",
-    "our clubs", "our gyms", "find a gym", "find a studio", "branches",
-]
-
-
-def _url(company: dict) -> str | None:
-    w = company.get("website") or ""
-    d = company.get("domain") or ""
-    if w.startswith("http"):
-        return w
-    if w:
-        return "https://" + w
-    if d:
-        return "https://" + d
-    return None
 
 
 def _match_strong(text: str) -> str | None:
@@ -194,93 +175,6 @@ def _match_strong(text: str) -> str | None:
         for p in phrases:
             if p in t:
                 return modality
-    return None
-
-
-def _match_signal(text: str) -> str | None:
-    t = text.lower()
-    for modality, phrases in SIGNAL_KEYWORDS.items():
-        for p in phrases:
-            if p in t:
-                return modality
-    return None
-
-
-def _is_bot_wall(text: str) -> bool:
-    t = text.lower()[:2000]
-    phrases = ["attention required", "cloudflare", "you have been blocked",
-               "access denied", "enable javascript", "ddos protection",
-               "checking your browser"]
-    return sum(1 for p in phrases if p in t) >= 2
-
-
-def _scrape_head(url: str) -> dict:
-    try:
-        r = requests.get(url, timeout=TIMEOUT, headers=BROWSER_HEADERS,
-                         allow_redirects=True)
-        if _is_bot_wall(r.text):
-            return {"_bot_blocked": True}
-        soup = BeautifulSoup(r.text[:10000], "lxml")
-        title = (soup.title.string or "").strip() if soup.title else ""
-        meta = " ".join(
-            tag.get("content", "") for tag in soup.find_all("meta")
-            if tag.get("name", "").lower() in ("description", "keywords")
-        )
-        h1 = " ".join(h.get_text(strip=True) for h in soup.find_all("h1")[:3])
-        nav_links = []
-        for a in soup.find_all("a", href=True):
-            txt = a.get_text(strip=True).lower()
-            if any(k in txt for k in NAV_LOCATION_HINTS):
-                nav_links.append(a["href"])
-        return {"title": title, "meta": meta, "h1": h1,
-                "nav_location_links": nav_links, "soup": soup, "html": r.text}
-    except Exception:
-        return {}
-
-
-def _count_locations(url: str, head: dict) -> int | None:
-    """
-    Returns a location count if we can determine it with high confidence.
-    Follows a locations nav link if found.
-    """
-    nav_links = head.get("nav_location_links", [])
-    soup_main = head.get("soup")
-    html = head.get("html", "")
-
-    # Follow the locations page if nav link found
-    locations_page_html = None
-    if nav_links:
-        try:
-            from urllib.parse import urlparse
-            parsed = urlparse(url)
-            href = nav_links[0]
-            loc_url = href if href.startswith("http") else f"{parsed.scheme}://{parsed.netloc}{href}"
-            r2 = requests.get(loc_url, timeout=TIMEOUT, headers=BROWSER_HEADERS)
-            locations_page_html = r2.text
-        except Exception:
-            pass
-
-    # Count addresses in the most content-rich source available
-    for content in [locations_page_html, html]:
-        if not content:
-            continue
-        soup = BeautifulSoup(content[:80000], "lxml")
-        for tag in soup(["script", "style"]):
-            tag.decompose()
-        text = soup.get_text(" ")
-
-        # Count AU/NZ postcodes (4-digit), US ZIP (5-digit)
-        postcodes = set(re.findall(r'\b\d{4,5}\b', text))
-        # Count "Level/Floor X" occurrences as address lines
-        floor_mentions = re.findall(r'\b(?:Level|Floor|Suite)\s+\d+\b', text, re.I)
-        # Street address pattern
-        streets = re.findall(r'\b\d{1,5}\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?\s+'
-                             r'(?:Street|St|Avenue|Ave|Road|Rd|Drive|Dr|Way|Blvd|Lane)\b', text)
-
-        count = max(len(postcodes), len(set(streets)), len(set(floor_mentions)))
-        if count > 0:
-            return count
-
     return None
 
 
@@ -294,62 +188,59 @@ def brand_tier_from_count(count: int | None) -> str | None:
     return "Enterprise"
 
 
-def enrich(company: dict, scraped_text: str = "") -> dict | None:
+def enrich(t0: dict) -> dict | None:
     """
-    Returns result dict with confidence scores, or None to escalate.
-    scraped_text: pre-scraped content from scraper.py (all stages already attempted).
-    Only returns if modality_confidence >= 90 AND brand_tier_confidence >= 90.
+    Pure keyword classification from T0-collected data. No HTTP calls.
+    Returns result dict if both confidences >= 90%, else None to escalate.
     """
-    name = (company.get("name") or "").strip()
-    domain = (company.get("domain") or "").lower().replace("www.", "")
-    url = _url(company)
+    name   = (t0.get("name") or "").strip()
+    domain = (t0.get("domain") or "").lower().replace("www.", "")
+    scraped_text   = t0.get("scraped_text", "")
+    location_count = t0.get("location_count")
+    maps_count     = t0.get("maps_count")
 
-    # --- Known brand exact domain match (KNOWN_BRANDS = both properties) ---
+    # --- Known brand exact match (both properties, 100% confidence) ---
     if domain in KNOWN_BRANDS:
         mod, tier = KNOWN_BRANDS[domain]
         return {"modality": mod, "brand_tier": tier,
                 "modality_confidence": 100, "brand_tier_confidence": 100,
                 "tier": 1, "method": "known_brand"}
 
-    # --- Brand whitelist match (modality only, 100% confidence) ---
+    # --- Brand whitelist (modality 100%, tier from location data) ---
     whitelist_modality = BRAND_WHITELIST.get(domain)
 
-    # --- Use pre-scraped text; fall back to scraping head if not provided ---
-    if scraped_text:
-        combined_text = f"{name} {scraped_text[:1000]}"
-        head = {}
-    else:
-        head = _scrape_head(url) if url else {}
-        if head.get("_bot_blocked"):
-            combined_text = name
-        else:
-            combined_text = f"{name} {head.get('title','')} {head.get('meta','')} {head.get('h1','')}"
+    # --- Build text for matching ---
+    combined = f"{name} {scraped_text[:1000]}" if scraped_text else name
 
-    # --- Modality: whitelist wins, then strong keyword ---
+    # --- Modality ---
     if whitelist_modality:
-        modality = whitelist_modality
+        modality       = whitelist_modality
         mod_confidence = 100
     else:
-        modality = _match_strong(name) or _match_strong(combined_text)
+        modality       = _match_strong(name) or _match_strong(combined)
         mod_confidence = 95 if modality else 0
 
     if not modality:
         return None
 
-    # --- Location count for brand_tier (still scrapes locations page) ---
-    loc_count = _count_locations(url, head) if url else None
-    brand_tier = brand_tier_from_count(loc_count)
+    # --- Brand tier from T0 location data (no scraping here) ---
+    count = location_count if location_count is not None else maps_count
+    brand_tier = brand_tier_from_count(count)
 
     if brand_tier is None:
         return None
 
-    tier_confidence = 90 if loc_count and loc_count > 1 else 85
+    # SMB (single location) is only 85% confident — still escalates to T2
+    tier_confidence = 90 if count and count > 1 else 85
 
     if mod_confidence >= 90 and tier_confidence >= 90:
-        return {"modality": modality, "brand_tier": brand_tier,
-                "modality_confidence": mod_confidence,
-                "brand_tier_confidence": tier_confidence,
-                "location_count": loc_count,
-                "tier": 1, "method": "keyword+location_scrape"}
+        return {
+            "modality":              modality,
+            "brand_tier":            brand_tier,
+            "modality_confidence":   mod_confidence,
+            "brand_tier_confidence": tier_confidence,
+            "location_count":        count,
+            "tier": 1, "method": "keyword+t0_location",
+        }
 
     return None

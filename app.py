@@ -12,7 +12,7 @@ from flask import Flask, Response, render_template, request, jsonify
 import google.cloud.firestore as firestore
 
 from enrichment import hubspot_client
-from enrichment import tier0, tier1, tier2, tier3, scraper
+from enrichment import tier0, tier1, tier2, tier3
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
@@ -53,128 +53,119 @@ CONFIDENCE_THRESHOLD = 90
 
 def process_company(company: dict) -> dict:
     """
-    Run company through Tier 1 → 2 → 3.
-    Each tier must return BOTH modality_confidence >= 90 AND brand_tier_confidence >= 90
-    to stop escalating. Tier 3 always returns a final answer (Other / blank if < 90).
+    T0 collects all data (scraping + location + Maps + Apollo).
+    T1/T2/T3 only interpret — no HTTP calls inside any tier.
     """
-    name = company.get("name", "")
+    name   = company.get("name", "")
     domain = company.get("domain", "")
-    cid = company["id"]
-    url = company.get("website") or (f"https://{domain}" if domain else "")
+    cid    = company["id"]
 
     emit({"type": "company_start", "id": cid, "name": name, "domain": domain})
     log_terminal(f"── Starting: {name} ({domain or 'no domain'})")
 
-    total_cost = 0.0
-
-    # --- Tier 0: Pre-flight domain validation ---
+    # ── Tier 0: collect everything ────────────────────────────────────────────
     emit({"type": "tier_attempt", "id": cid, "tier": 0,
-          "method": "domain reachability · DuckDuckGo name search"})
-    log_terminal(f"[T0] Checking domain reachability: {url or domain or 'no URL'}")
+          "method": "domain check · 4-stage scrape · location extract · Maps · Apollo"})
+    log_terminal(f"[T0] Domain validation + scraping + location data collection...")
 
-    t0 = tier0.check(company)
+    t0 = tier0.collect(company)
 
     if t0.get("_skip"):
         reason = t0.get("skip_reason", "unknown")
         log_terminal(f"[T0] ✗ Skipping — {reason}", "error")
-        log_terminal(f"[T0] Setting modality=Other, brand_tier=blank (no tokens spent)", "warn")
         return {"modality": "Other", "brand_tier": "",
                 "modality_confidence": 0, "brand_tier_confidence": 0,
                 "cost_usd": 0.0, "tier": 0, "method": "skipped_invalid_domain",
-                "scrape_stage": 0, "scrape_queued": False,
-                "id": cid}
+                "scrape_stage": 0, "scrape_queued": False, "id": cid}
 
     if t0.get("_domain_corrected"):
-        log_terminal(f"[T0] Domain unreachable — found via search: {t0['domain']} "
-                     f"(was: {t0.get('_original_domain', domain)})", "warn")
-        company = t0  # Use corrected domain for all downstream tiers
-    else:
-        log_terminal(f"[T0] ✓ Domain reachable — proceeding", "success")
-
-    # --- Pre-scrape: run once, pass to all tiers ---
-    scrape_url = company.get("website") or (f"https://{company['domain']}" if company.get("domain") else "")
-    log_terminal(f"[Scraper] Extracting website content...")
-    scrape_result = scraper.scrape(company)
-    scraped_text  = scrape_result["content"]
-    scrape_stage  = scrape_result["stage"]
-    scrape_queued = scrape_result["queued"]
+        log_terminal(f"[T0] Domain corrected: {t0.get('_original_domain', domain)} → {t0['domain']}", "warn")
 
     stage_labels = {0: "no content", 1: "static HTML", 2: "Jina Reader",
                     3: "Playwright headless", 4: "local Chrome"}
+    scrape_stage  = t0["scrape_stage"]
+    scrape_queued = t0["scrape_queued"]
+    scraped_text  = t0["scraped_text"]
+
     if scraped_text:
-        log_terminal(f"[Scraper] ✓ Stage {scrape_stage} ({stage_labels.get(scrape_stage,'?')}) "
-                     f"— {len(scraped_text)} chars extracted", "success")
+        log_terminal(
+            f"[T0] ✓ Scrape S{scrape_stage} ({stage_labels.get(scrape_stage,'?')}) "
+            f"— {len(scraped_text)} chars", "success")
     elif scrape_queued:
-        log_terminal(f"[Scraper] Local machine offline — queued for Stage 4 when machine wakes", "warn")
-        log_terminal(f"[Scraper] Continuing with name-only classification", "warn")
+        log_terminal(f"[T0] Local machine offline — queued for Stage 4", "warn")
     else:
-        log_terminal(f"[Scraper] All stages returned no content — using name-only", "warn")
+        log_terminal(f"[T0] All scrape stages returned no content — name-only", "warn")
+
+    loc = t0.get("location_count")
+    maps = t0.get("maps_count")
+    if loc is not None:
+        log_terminal(f"[T0] Website location count: {loc}")
+    if maps is not None:
+        log_terminal(f"[T0] Google Maps listings: {maps}")
+    if t0.get("apollo_industry"):
+        log_terminal(f"[T0] Apollo industry: {t0['apollo_industry']}")
 
     emit({"type": "scrape_done", "id": cid, "stage": scrape_stage,
           "queued": scrape_queued, "chars": len(scraped_text)})
 
-    # --- Tier 1: Free, deterministic ---
+    total_cost = t0.get("cost_usd", 0.0)   # Maps API cost already tracked
+
+    # ── Tier 1: keyword classification ───────────────────────────────────────
     emit({"type": "tier_attempt", "id": cid, "tier": 1,
-          "method": "known brand lookup · keyword match · location scrape"})
-    log_terminal(f"[T1] Checking known brands and keyword patterns...")
+          "method": "known brand lookup · keyword match · T0 location data"})
+    log_terminal(f"[T1] Keyword matching on pre-scraped content...")
 
-    result1 = tier1.enrich(company, scraped_text=scraped_text)
+    result1 = tier1.enrich(t0)
 
-    if result1 and not result1.get("_partial"):
+    if result1:
         mc = result1.get("modality_confidence", 0)
         tc = result1.get("brand_tier_confidence", 0)
-        log_terminal(f"[T1] Keyword hit → {result1.get('modality')} ({mc}%) · "
+        log_terminal(f"[T1] → {result1.get('modality')} ({mc}%) · "
                      f"{result1.get('brand_tier')} ({tc}%) via {result1.get('method')}")
         if mc >= CONFIDENCE_THRESHOLD and tc >= CONFIDENCE_THRESHOLD:
-            log_terminal(f"[T1] ✓ Both ≥{CONFIDENCE_THRESHOLD}% — resolved at Tier 1", "success")
-            result1["id"] = cid
-            result1["cost_usd"] = 0.0
+            log_terminal(f"[T1] ✓ Resolved at Tier 1", "success")
+            result1["id"]           = cid
+            result1["cost_usd"]     = total_cost
             result1["scrape_stage"] = scrape_stage
-            result1["scrape_queued"] = scrape_queued
+            result1["scrape_queued"]= scrape_queued
             return result1
-        else:
-            log_terminal(f"[T1] Confidence too low (need {CONFIDENCE_THRESHOLD}% each) — escalating to T2", "warn")
+        log_terminal(f"[T1] Confidence too low — escalating to T2", "warn")
     else:
-        log_terminal(f"[T1] No strong match found — escalating to T2", "warn")
+        log_terminal(f"[T1] No strong keyword match — escalating to T2", "warn")
 
-    # --- Tier 2: Gemini Flash via Vertex AI ---
+    # ── Tier 2: Gemini ───────────────────────────────────────────────────────
     emit({"type": "tier_attempt", "id": cid, "tier": 2,
-          "method": "Apollo · website scrape · Gemini 1.5 Flash (Vertex AI)"})
-    log_terminal(f"[T2] Scraping {url or 'website'} (title + meta + nav + footer)...")
-    if domain:
-        log_terminal(f"[T2] Querying Apollo for domain: {domain}")
-    log_terminal(f"[T2] Searching Google Maps for '{name}' to estimate location count...")
-    log_terminal(f"[T2] Sending structured context to Gemini 1.5 Flash (Vertex AI)...")
+          "method": "Gemini 1.5 Flash (Vertex AI) · T0 context"})
+    log_terminal(f"[T2] Sending T0 context to Gemini 1.5 Flash...")
 
-    result2 = tier2.enrich(company, tier1_result=result1, scraped_text=scraped_text)
+    result2 = tier2.enrich(t0, tier1_result=result1)
 
     if result2 and not result2.get("_partial"):
         mc = result2.get("modality_confidence", 0)
         tc = result2.get("brand_tier_confidence", 0)
+        total_cost += result2.get("cost_usd", 0.0)
         log_terminal(f"[T2] Gemini → {result2.get('modality')} ({mc}%) · "
                      f"{result2.get('brand_tier')} ({tc}%)")
-        total_cost += result2.get("cost_usd", 0.0)
         if mc >= CONFIDENCE_THRESHOLD and tc >= CONFIDENCE_THRESHOLD:
-            log_terminal(f"[T2] ✓ Both ≥{CONFIDENCE_THRESHOLD}% — resolved at Tier 2", "success")
-            result2["id"] = cid
-            result2["cost_usd"] = total_cost
+            log_terminal(f"[T2] ✓ Resolved at Tier 2", "success")
+            result2["id"]           = cid
+            result2["cost_usd"]     = total_cost
             result2["scrape_stage"] = scrape_stage
-            result2["scrape_queued"] = scrape_queued
+            result2["scrape_queued"]= scrape_queued
             return result2
-        else:
-            reasoning = result2.get("reasoning", "")
-            log_terminal(f"[T2] Gemini reasoning: {reasoning}", "muted")
-            log_terminal(f"[T2] Below threshold — escalating to T3", "warn")
+        log_terminal(f"[T2] Reasoning: {result2.get('reasoning','')}", "muted")
+        log_terminal(f"[T2] Below threshold — escalating to T3", "warn")
     else:
-        log_terminal(f"[T2] Gemini returned no usable result — escalating to T3", "warn")
+        if result2:
+            total_cost += result2.get("cost_usd", 0.0)
+        log_terminal(f"[T2] No usable result — escalating to T3", "warn")
 
-    # --- Tier 3: Claude Haiku, deep scrape ---
+    # ── Tier 3: Claude Haiku ─────────────────────────────────────────────────
     emit({"type": "tier_attempt", "id": cid, "tier": 3,
-          "method": "deep page scrape · Claude Haiku"})
-    log_terminal(f"[T3] Deep scraping full page content...")
+          "method": "Claude Haiku 4.5 · T0 content"})
     log_terminal(f"[T3] Sending to Claude Haiku for final classification...")
 
-    result3 = tier3.enrich(company, previous=result2 or result1, scraped_text=scraped_text)
+    result3 = tier3.enrich(t0, previous=result2 or result1)
     total_cost += result3.get("cost_usd", 0.0)
 
     mc = result3.get("modality_confidence", 0)
@@ -184,13 +175,12 @@ def process_company(company: dict) -> dict:
         log_terminal(f"[T3] ✓ Haiku → {result3.get('modality')} ({mc}%) · "
                      f"{result3.get('brand_tier')} ({tc}%)", "success")
     else:
-        log_terminal(f"[T3] ✗ Confidence below {CONFIDENCE_THRESHOLD}% — "
-                     f"setting modality=Other, brand_tier=blank", "error")
+        log_terminal(f"[T3] ✗ Below threshold — modality=Other, brand_tier=blank", "error")
 
-    result3["id"] = cid
-    result3["cost_usd"] = total_cost
+    result3["id"]           = cid
+    result3["cost_usd"]     = total_cost
     result3["scrape_stage"] = scrape_stage
-    result3["scrape_queued"] = scrape_queued
+    result3["scrape_queued"]= scrape_queued
     return result3
 
 

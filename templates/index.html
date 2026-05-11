@@ -772,7 +772,9 @@
     }
 
     if (ev.type === "tier_attempt") {
-      updateCurrentStage(`Tier ${ev.tier} — ${ev.method}`);
+      updateCurrentStage(ev.tier === 0
+        ? `T0 — data collection`
+        : `Tier ${ev.tier} — ${ev.method}`);
     }
 
     if (ev.type === "company_done") {
