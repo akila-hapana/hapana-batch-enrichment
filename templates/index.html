@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Batch Data Enrichment</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface2: #22263a;
+      --border: #2e3248;
+      --accent: #6c63ff;
+      --accent2: #4ade80;
+      --warn: #f59e0b;
+      --danger: #f87171;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --tier1: #4ade80;
+      --tier2: #60a5fa;
+      --tier3: #f59e0b;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, sans-serif; font-size: 13px; min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* ---- Header ---- */
+    header {
+      padding: 16px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+    header span.badge { background: var(--surface2); color: var(--muted); padding: 2px 8px; border-radius: 4px; font-size: 11px; }
+    .controls { margin-left: auto; display: flex; gap: 8px; }
+    button {
+      padding: 7px 18px;
+      border: none;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #btn-start { background: var(--accent); color: #fff; }
+    #btn-stop  { background: var(--surface2); color: var(--danger); border: 1px solid var(--border); }
+
+    /* ---- Progress ---- */
+    .progress-section {
+      padding: 16px 24px 12px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .progress-meta { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .progress-meta span { color: var(--muted); }
+    .progress-meta strong { color: var(--text); }
+    .progress-bar-outer { height: 6px; background: var(--surface2); border-radius: 99px; overflow: hidden; }
+    .progress-bar-inner { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); border-radius: 99px; transition: width 0.4s ease; width: 0%; }
+
+    /* ---- Current company card ---- */
+    .current-section {
+      padding: 12px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .current-label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; }
+    .current-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 52px;
+    }
+    .current-card .company-name { font-weight: 600; font-size: 14px; }
+    .current-card a { color: var(--accent); text-decoration: none; }
+    .current-card a:hover { text-decoration: underline; }
+    .current-card .domain { color: var(--muted); }
+    .stage-pills { display: flex; gap: 6px; flex-wrap: wrap; }
+    .pill {
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+      border: 1px solid;
+    }
+    .pill-tier1 { color: var(--tier1); border-color: var(--tier1); }
+    .pill-tier2 { color: var(--tier2); border-color: var(--tier2); }
+    .pill-tier3 { color: var(--tier3); border-color: var(--tier3); }
+    .pill-done  { color: var(--accent2); border-color: var(--accent2); background: rgba(74,222,128,0.08); }
+    .pill-failed { color: var(--danger); border-color: var(--danger); }
+    .pill-skip  { color: var(--muted); border-color: var(--border); }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: var(--muted);
+      animation: pulse 1.2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .status-dot.done { background: var(--accent2); animation: none; }
+    .status-dot.failed { background: var(--danger); animation: none; }
+
+    /* ---- Stats bar ---- */
+    .stats-bar {
+      display: flex;
+      gap: 24px;
+      padding: 8px 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .stat { display: flex; gap: 6px; align-items: center; }
+    .stat-val { font-weight: 700; font-size: 15px; }
+    .stat-val.green { color: var(--accent2); }
+    .stat-val.yellow { color: var(--warn); }
+    .stat-val.red { color: var(--danger); }
+    .stat-label { color: var(--muted); font-size: 11px; }
+    .tier-breakdown { margin-left: auto; display: flex; gap: 12px; }
+    .tier-stat { font-size: 11px; }
+
+    /* ---- Tables ---- */
+    .tables-wrapper {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      flex: 1;
+      overflow: hidden;
+    }
+    .table-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border-right: 1px solid var(--border);
+    }
+    .table-panel:last-child { border-right: none; }
+    .table-header {
+      padding: 10px 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .table-header .count-badge {
+      margin-left: auto;
+      background: var(--surface2);
+      color: var(--muted);
+      padding: 1px 7px;
+      border-radius: 99px;
+      font-size: 11px;
+    }
+    .table-scroll { flex: 1; overflow-y: auto; }
+
+    table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    thead th {
+      position: sticky; top: 0;
+      background: var(--surface2);
+      padding: 8px 10px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    thead th:nth-child(1) { width: 24%; }
+    thead th:nth-child(2) { width: 22%; }
+    thead th:nth-child(3) { width: 18%; }
+    thead th:nth-child(4) { width: 16%; }
+    thead th:nth-child(5) { width: 20%; }
+
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background 0.15s;
+    }
+    tbody tr:hover { background: var(--surface2); }
+    tbody tr.new-row { animation: fadeIn 0.4s ease; }
+    @keyframes fadeIn { from { opacity:0; background: rgba(108,99,255,0.12); } to { opacity:1; } }
+
+    td {
+      padding: 7px 10px;
+      vertical-align: middle;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    td a { color: var(--accent); text-decoration: none; font-weight: 500; }
+    td a:hover { text-decoration: underline; }
+    td.muted { color: var(--muted); font-size: 12px; }
+    td.modality-cell { font-size: 12px; }
+
+    .tier-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .t1 { background: rgba(74,222,128,0.12); color: var(--tier1); }
+    .t2 { background: rgba(96,165,250,0.12); color: var(--tier2); }
+    .t3 { background: rgba(245,158,11,0.12); color: var(--tier3); }
+
+    .brand-chip {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .smb  { background: rgba(74,222,128,0.1);  color: #4ade80; }
+    .mid  { background: rgba(96,165,250,0.1);  color: #60a5fa; }
+    .ent  { background: rgba(245,158,11,0.1);  color: #f59e0b; }
+    .blank-val { color: var(--border); }
+
+    /* ---- Empty state ---- */
+    .empty-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 40px; color: var(--muted); gap: 8px;
+    }
+    .empty-state svg { opacity: 0.3; }
+
+    /* ---- Scrollbar ---- */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+  <h1>Batch Data Enrichment</h1>
+  <span class="badge" id="batch-label">Loading batch...</span>
+  <div class="controls">
+    <button id="btn-start" onclick="startBatch()">▶ Start</button>
+    <button id="btn-stop" onclick="stopBatch()" disabled>⏹ Stop</button>
+  </div>
+</header>
+
+<!-- Progress -->
+<div class="progress-section">
+  <div class="progress-meta">
+    <span>Progress</span>
+    <strong id="progress-text">0 / 0</strong>
+  </div>
+  <div class="progress-bar-outer">
+    <div class="progress-bar-inner" id="progress-bar"></div>
+  </div>
+</div>
+
+<!-- Current company -->
+<div class="current-section">
+  <div class="current-label">Currently Processing</div>
+  <div class="current-card" id="current-card">
+    <div class="company-name" style="color:var(--muted)">—</div>
+    <div class="domain" style="color:var(--muted)">Press Start to begin</div>
+    <div class="stage-pills"></div>
+    <div></div>
+  </div>
+</div>
+
+<!-- Stats bar -->
+<div class="stats-bar">
+  <div class="stat"><span class="stat-val green" id="stat-enriched">0</span><span class="stat-label">Enriched</span></div>
+  <div class="stat"><span class="stat-val red" id="stat-failed">0</span><span class="stat-label">Failed</span></div>
+  <div class="stat"><span class="stat-val yellow" id="stat-pending">—</span><span class="stat-label">Pending</span></div>
+  <div class="tier-breakdown">
+    <span class="tier-stat t1">T1: <b id="t1-count">0</b></span>
+    <span class="tier-stat t2">T2: <b id="t2-count">0</b></span>
+    <span class="tier-stat t3">T3: <b id="t3-count">0</b></span>
+  </div>
+</div>
+
+<!-- Tables -->
+<div class="tables-wrapper">
+
+  <!-- Pending -->
+  <div class="table-panel">
+    <div class="table-header" style="color:var(--muted)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Pending
+      <span class="count-badge" id="pending-count">0</span>
+    </div>
+    <div class="table-scroll">
+      <table id="pending-table">
+        <thead>
+          <tr>
+            <th>Company Name</th>
+            <th>Website</th>
+            <th>Domain</th>
+            <th>Brand Tier</th>
+            <th>Modality</th>
+          </tr>
+        </thead>
+        <tbody id="pending-tbody">
+          <tr><td colspan="5"><div class="empty-state">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><line x1="12" y1="12" x2="12" y2="12"/></svg>
+            <span>Click Start to load companies</span>
+          </div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Enriched -->
+  <div class="table-panel">
+    <div class="table-header" style="color:var(--accent2)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      Enriched
+      <span class="count-badge" id="enriched-count">0</span>
+    </div>
+    <div class="table-scroll">
+      <table id="enriched-table">
+        <thead>
+          <tr>
+            <th>Company Name</th>
+            <th>Website</th>
+            <th>Domain</th>
+            <th>Brand Tier</th>
+            <th>Modality</th>
+          </tr>
+        </thead>
+        <tbody id="enriched-tbody">
+          <tr><td colspan="5"><div class="empty-state">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="m9 12 2 2 4-4"/></svg>
+            <span>Enriched companies will appear here</span>
+          </div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // State
+  let companies = [];        // full list
+  let pendingMap = {};       // id → company row data
+  let enrichedList = [];
+  let tierCounts = {1:0, 2:0, 3:0};
+  let eventSource = null;
+  let totalCompanies = 0;
+
+  // ---- Load batch on page load ----
+  async function loadBatch() {
+    try {
+      const res = await fetch("/load-batch");
+      const data = await res.json();
+      companies = data.companies;
+      totalCompanies = data.total;
+      document.getElementById("batch-label").textContent = `${totalCompanies} companies`;
+      document.getElementById("stat-pending").textContent = totalCompanies;
+      document.getElementById("pending-count").textContent = totalCompanies;
+      document.getElementById("progress-text").textContent = `0 / ${totalCompanies}`;
+      populatePendingTable(companies);
+    } catch (e) {
+      document.getElementById("batch-label").textContent = "Error loading batch";
+    }
+  }
+
+  function populatePendingTable(companies) {
+    const tbody = document.getElementById("pending-tbody");
+    if (companies.length === 0) return;
+    tbody.innerHTML = "";
+    companies.forEach(c => {
+      pendingMap[c.id] = c;
+      const website = c.website || (c.domain ? "https://" + c.domain : "");
+      const row = makePendingRow(c.id, c.name, website, c.domain);
+      tbody.appendChild(row);
+    });
+  }
+
+  function makePendingRow(id, name, website, domain) {
+    const tr = document.createElement("tr");
+    tr.id = `pending-${id}`;
+    const displayUrl = website ? website.replace(/^https?:\/\//, "") : "";
+    tr.innerHTML = `
+      <td>${website ? `<a href="${website}" target="_blank" rel="noopener">${escHtml(name || "—")}</a>` : escHtml(name || "—")}</td>
+      <td class="muted">${website ? `<a href="${website}" target="_blank" rel="noopener">${escHtml(displayUrl)}</a>` : "—"}</td>
+      <td class="muted">${escHtml(domain || "—")}</td>
+      <td class="blank-val">—</td>
+      <td class="blank-val">—</td>
+    `;
+    return tr;
+  }
+
+  function makeEnrichedRow(id, name, website, domain, brandTier, modality, tier, skipped) {
+    const tr = document.createElement("tr");
+    tr.className = "new-row";
+    tr.id = `enriched-${id}`;
+    const displayUrl = website ? website.replace(/^https?:\/\//, "") : "";
+    const tierBadge = tier > 0 ? `<span class="tier-badge t${tier}">T${tier}</span>` : `<span class="tier-badge" style="opacity:.4">—</span>`;
+    const brandChip = brandTier ? `<span class="brand-chip ${brandTier === 'SMB' ? 'smb' : brandTier === 'MID' ? 'mid' : 'ent'}">${brandTier}</span>` : `<span class="blank-val">—</span>`;
+    tr.innerHTML = `
+      <td>${website ? `<a href="${website}" target="_blank" rel="noopener">${escHtml(name || "—")}</a>` : escHtml(name || "—")}</td>
+      <td class="muted">${website ? `<a href="${website}" target="_blank" rel="noopener">${escHtml(displayUrl)}</a>` : "—"}</td>
+      <td class="muted">${escHtml(domain || "—")}</td>
+      <td>${brandChip} ${tierBadge}</td>
+      <td class="modality-cell">${escHtml(modality || "—")}</td>
+    `;
+    return tr;
+  }
+
+  // ---- SSE ----
+  function connectStream() {
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource("/stream");
+    eventSource.onmessage = handleEvent;
+    eventSource.onerror = () => {
+      setTimeout(connectStream, 3000);
+    };
+  }
+
+  function handleEvent(e) {
+    const ev = JSON.parse(e.data);
+
+    if (ev.type === "batch_started") {
+      // Companies come from /load-batch, already shown
+      document.getElementById("btn-start").disabled = true;
+      document.getElementById("btn-stop").disabled = false;
+    }
+
+    if (ev.type === "company_start") {
+      updateCurrentCard(ev.id, ev.name, ev.domain, null, null, null);
+    }
+
+    if (ev.type === "tier_attempt") {
+      updateCurrentCardStage(ev.tier, ev.method);
+    }
+
+    if (ev.type === "company_done") {
+      const company = pendingMap[ev.id] || {};
+      const website = company.website || (company.domain ? "https://" + company.domain : ev.domain ? "https://" + ev.domain : "");
+
+      // Remove from pending
+      const pendingRow = document.getElementById(`pending-${ev.id}`);
+      if (pendingRow) pendingRow.remove();
+
+      // Add to enriched
+      const tbody = document.getElementById("enriched-tbody");
+      // Remove empty state if present
+      const emptyRow = tbody.querySelector(".empty-state");
+      if (emptyRow) emptyRow.closest("tr").remove();
+
+      const row = makeEnrichedRow(ev.id, ev.name, website, company.domain || "",
+        ev.brand_tier, ev.modality, ev.tier, ev.skipped);
+      tbody.insertBefore(row, tbody.firstChild);
+
+      // Tier counts
+      if (ev.tier > 0) tierCounts[ev.tier] = (tierCounts[ev.tier] || 0) + 1;
+      document.getElementById("t1-count").textContent = tierCounts[1] || 0;
+      document.getElementById("t2-count").textContent = tierCounts[2] || 0;
+      document.getElementById("t3-count").textContent = tierCounts[3] || 0;
+
+      updateCurrentCard(ev.id, ev.name, company.domain, ev.modality, ev.brand_tier, ev.tier, true);
+    }
+
+    if (ev.type === "company_failed") {
+      const pendingRow = document.getElementById(`pending-${ev.id}`);
+      if (pendingRow) pendingRow.style.opacity = "0.4";
+    }
+
+    if (ev.type === "progress") {
+      const pct = Math.round((ev.current / ev.total) * 100);
+      document.getElementById("progress-bar").style.width = pct + "%";
+      document.getElementById("progress-text").textContent = `${ev.current} / ${ev.total}`;
+      document.getElementById("stat-enriched").textContent = ev.enriched;
+      document.getElementById("stat-failed").textContent = ev.failed;
+      const pending = ev.total - ev.current;
+      document.getElementById("stat-pending").textContent = pending;
+      document.getElementById("pending-count").textContent = pending;
+      document.getElementById("enriched-count").textContent = ev.enriched;
+    }
+
+    if (ev.type === "batch_done") {
+      document.getElementById("btn-start").disabled = false;
+      document.getElementById("btn-stop").disabled = true;
+      document.getElementById("batch-label").textContent = `Done — ${ev.enriched}/${ev.total} enriched`;
+    }
+
+    if (ev.type === "batch_stopped") {
+      document.getElementById("btn-start").disabled = false;
+      document.getElementById("btn-stop").disabled = true;
+    }
+  }
+
+  function updateCurrentCard(id, name, domain, modality, brandTier, tier, done) {
+    const company = pendingMap[id] || {};
+    const website = company.website || (domain ? "https://" + domain : "");
+    const card = document.getElementById("current-card");
+    card.innerHTML = `
+      <div>
+        <div class="company-name">${website ? `<a href="${website}" target="_blank">${escHtml(name || "—")}</a>` : escHtml(name || "—")}</div>
+        <div class="domain">${escHtml(domain || "—")}</div>
+      </div>
+      <div>
+        ${modality ? `<strong>${escHtml(modality)}</strong>` : `<span style="color:var(--muted)">Classifying...</span>`}
+        ${brandTier ? `&nbsp;<span class="brand-chip ${brandTier === 'SMB' ? 'smb' : brandTier === 'MID' ? 'mid' : 'ent'}">${brandTier}</span>` : ""}
+      </div>
+      <div class="stage-pills" id="stage-pills">
+        ${tier ? `<span class="pill pill-tier${tier}">Tier ${tier}</span>` : `<span class="pill pill-tier1" style="opacity:.5">Tier 1</span>`}
+        ${done ? `<span class="pill pill-done">✓ Done</span>` : ""}
+      </div>
+      <div class="status-dot ${done ? 'done' : ''}"></div>
+    `;
+  }
+
+  function updateCurrentCardStage(tier, method) {
+    const pills = document.getElementById("stage-pills");
+    if (pills) {
+      pills.innerHTML = `<span class="pill pill-tier${tier}">Tier ${tier}</span><span style="color:var(--muted);font-size:11px">${escHtml(method)}</span>`;
+    }
+  }
+
+  async function startBatch() {
+    document.getElementById("btn-start").disabled = true;
+    // Reset enriched table
+    document.getElementById("enriched-tbody").innerHTML = `<tr><td colspan="5"><div class="empty-state" style="padding:20px"><span>Enriched companies will appear here</span></div></td></tr>`;
+    enrichedList = [];
+    tierCounts = {1:0, 2:0, 3:0};
+    document.getElementById("t1-count").textContent = "0";
+    document.getElementById("t2-count").textContent = "0";
+    document.getElementById("t3-count").textContent = "0";
+
+    await fetch("/start", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({}) });
+  }
+
+  async function stopBatch() {
+    await fetch("/stop", { method: "POST" });
+    document.getElementById("btn-stop").disabled = true;
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // Init
+  loadBatch();
+  connectStream();
+</script>
+</body>
+</html>
