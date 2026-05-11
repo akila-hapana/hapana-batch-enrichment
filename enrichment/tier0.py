@@ -526,7 +526,7 @@ def collect(company: dict) -> dict:
     apollo = _apollo_enrich(domain)
     ctx.update(apollo)
 
-    log.info(f"[T0 ✓] {name} — stage={scrape_stage} "
-             f"loc={location_count} maps={maps_count} "
+    log.info(f"[T0 ✓] {name} — stage={ctx['scrape_stage']} "
+             f"loc={ctx.get('location_count')} maps={ctx.get('maps_count')} "
              f"apollo={ctx.get('apollo_industry','—')}")
     return ctx
