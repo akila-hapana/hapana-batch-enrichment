@@ -24,7 +24,7 @@ _event_queue: queue.Queue = queue.Queue()
 _batch_thread: threading.Thread | None = None
 _stop_flag = threading.Event()
 
-GCP_PROJECT = os.environ.get("GCP_PROJECT", "verdant-wave-440404-g9")
+GCP_PROJECT = os.environ.get("FIRESTORE_PROJECT", "verdant-wave-440404-g9")
 HUBSPOT_BATCH_LIST_ID = os.environ.get("HUBSPOT_BATCH_LIST_ID", "23763")  # Batch 1 — 10 companies
 
 
@@ -33,41 +33,104 @@ def get_db():
 
 
 def emit(event: dict):
-    """Push SSE event to the queue."""
+    """Push SSE event to queue and log to terminal stream."""
     _event_queue.put(event)
+
+
+def log_terminal(message: str, level: str = "info"):
+    """Emit a terminal log line visible in the UI log panel."""
+    import time as _time
+    emit({"type": "log", "level": level, "message": message,
+          "ts": _time.strftime("%H:%M:%S")})
 
 
 # ---------------------------------------------------------------------------
 # Enrichment pipeline
 # ---------------------------------------------------------------------------
 
+CONFIDENCE_THRESHOLD = 90
+
+
 def process_company(company: dict) -> dict:
-    """Run a company through Tier 1 → 2 → 3, return final result."""
+    """
+    Run company through Tier 1 → 2 → 3.
+    Each tier must return BOTH modality_confidence >= 90 AND brand_tier_confidence >= 90
+    to stop escalating. Tier 3 always returns a final answer (Other / blank if < 90).
+    """
     name = company.get("name", "")
+    domain = company.get("domain", "")
     cid = company["id"]
+    url = company.get("website") or (f"https://{domain}" if domain else "")
 
-    emit({"type": "company_start", "id": cid, "name": name,
-          "domain": company.get("domain", "")})
+    emit({"type": "company_start", "id": cid, "name": name, "domain": domain})
+    log_terminal(f"── Starting: {name} ({domain or 'no domain'})")
 
-    # Tier 1
-    emit({"type": "tier_attempt", "id": cid, "tier": 1, "method": "keyword + head scrape"})
-    result = tier1.enrich(company)
+    # --- Tier 1: Free, deterministic ---
+    emit({"type": "tier_attempt", "id": cid, "tier": 1,
+          "method": "known brand lookup · keyword match · location scrape"})
+    log_terminal(f"[T1] Checking known brands and keyword patterns...")
 
-    if result and result.get("modality") and result.get("brand_tier"):
-        result["id"] = cid
-        return result
+    result1 = tier1.enrich(company)
 
-    # Tier 2
-    emit({"type": "tier_attempt", "id": cid, "tier": 2, "method": "Apollo + locations scrape + Haiku"})
-    result2 = tier2.enrich(company, tier1_result=result)
+    if result1 and not result1.get("_partial"):
+        mc = result1.get("modality_confidence", 0)
+        tc = result1.get("brand_tier_confidence", 0)
+        log_terminal(f"[T1] Keyword hit → {result1.get('modality')} ({mc}%) · "
+                     f"{result1.get('brand_tier')} ({tc}%) via {result1.get('method')}")
+        if mc >= CONFIDENCE_THRESHOLD and tc >= CONFIDENCE_THRESHOLD:
+            log_terminal(f"[T1] ✓ Both ≥{CONFIDENCE_THRESHOLD}% — resolved at Tier 1", "success")
+            result1["id"] = cid
+            return result1
+        else:
+            log_terminal(f"[T1] Confidence too low (need {CONFIDENCE_THRESHOLD}% each) — escalating to T2", "warn")
+    else:
+        log_terminal(f"[T1] No strong match found — escalating to T2", "warn")
 
-    if result2 and result2.get("modality") and result2.get("brand_tier"):
-        result2["id"] = cid
-        return result2
+    # --- Tier 2: Gemini Flash via Vertex AI ---
+    emit({"type": "tier_attempt", "id": cid, "tier": 2,
+          "method": "Apollo · website scrape · Gemini 1.5 Flash (Vertex AI)"})
+    log_terminal(f"[T2] Scraping {url or 'website'} (title + meta + nav + footer)...")
+    if domain:
+        log_terminal(f"[T2] Querying Apollo for domain: {domain}")
+    log_terminal(f"[T2] Searching Google Maps for '{name}' to estimate location count...")
+    log_terminal(f"[T2] Sending structured context to Gemini 1.5 Flash (Vertex AI)...")
 
-    # Tier 3
-    emit({"type": "tier_attempt", "id": cid, "tier": 3, "method": "deep scrape + Haiku"})
-    result3 = tier3.enrich(company, previous=result2 or result)
+    result2 = tier2.enrich(company, tier1_result=result1)
+
+    if result2 and not result2.get("_partial"):
+        mc = result2.get("modality_confidence", 0)
+        tc = result2.get("brand_tier_confidence", 0)
+        log_terminal(f"[T2] Gemini → {result2.get('modality')} ({mc}%) · "
+                     f"{result2.get('brand_tier')} ({tc}%)")
+        if mc >= CONFIDENCE_THRESHOLD and tc >= CONFIDENCE_THRESHOLD:
+            log_terminal(f"[T2] ✓ Both ≥{CONFIDENCE_THRESHOLD}% — resolved at Tier 2", "success")
+            result2["id"] = cid
+            return result2
+        else:
+            reasoning = result2.get("reasoning", "")
+            log_terminal(f"[T2] Gemini reasoning: {reasoning}", "muted")
+            log_terminal(f"[T2] Below threshold — escalating to T3", "warn")
+    else:
+        log_terminal(f"[T2] Gemini returned no usable result — escalating to T3", "warn")
+
+    # --- Tier 3: Claude Haiku, deep scrape ---
+    emit({"type": "tier_attempt", "id": cid, "tier": 3,
+          "method": "deep page scrape · Claude Haiku"})
+    log_terminal(f"[T3] Deep scraping full page content...")
+    log_terminal(f"[T3] Sending to Claude Haiku for final classification...")
+
+    result3 = tier3.enrich(company, previous=result2 or result1)
+
+    mc = result3.get("modality_confidence", 0)
+    tc = result3.get("brand_tier_confidence", 0)
+
+    if mc >= CONFIDENCE_THRESHOLD and tc >= CONFIDENCE_THRESHOLD:
+        log_terminal(f"[T3] ✓ Haiku → {result3.get('modality')} ({mc}%) · "
+                     f"{result3.get('brand_tier')} ({tc}%)", "success")
+    else:
+        log_terminal(f"[T3] ✗ Confidence below {CONFIDENCE_THRESHOLD}% — "
+                     f"setting modality=Other, brand_tier=blank", "error")
+
     result3["id"] = cid
     return result3
 

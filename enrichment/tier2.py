@@ -1,17 +1,24 @@
 """
-Tier 2 — Low cost: Apollo enrichment + locations page scraping + Google Places + Claude Haiku.
-Called when Tier 1 couldn't resolve modality, OR resolved modality but not brand_tier.
+Tier 2 — Gemini 1.5 Flash via Vertex AI (~$0.0008/call).
+Called when Tier 1 couldn't reach 90% confidence on both properties.
+Returns result only if BOTH modality_confidence >= 90 AND brand_tier_confidence >= 90.
 """
 import os
 import re
 import json
 import requests
 from bs4 import BeautifulSoup
-from .tier1 import match_keywords, brand_tier_from_count, TIMEOUT
+from .tier1 import (
+    brand_tier_from_count, NAV_LOCATION_HINTS, TIMEOUT,
+    _url, _match_strong, _match_signal
+)
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-APOLLO_API_KEY = os.environ.get("APOLLO_API_KEY", "")
-GOOGLE_PLACES_API_KEY = os.environ.get("GOOGLE_PLACES_API_KEY", "")
+GCP_PROJECT        = os.environ.get("VERTEX_PROJECT", "hapana-internal-platform")
+GCP_LOCATION       = "us-central1"
+GEMINI_MODEL       = "gemini-1.5-flash"
+APOLLO_KEY         = os.environ.get("APOLLO_API_KEY", "")
+SA_KEY_JSON        = os.environ.get("GCP_SERVICE_ACCOUNT_KEY", "")
+GOOGLE_MAPS_KEY    = os.environ.get("GOOGLE_PLACES_API_KEY", "")
 
 VALID_MODALITIES = [
     "Boxing", "Dance", "Education", "EMS", "Golf", "Gym", "HIIT/Functional",
@@ -19,265 +26,265 @@ VALID_MODALITIES = [
     "Tanning", "Wellness/Recovery", "Yoga",
 ]
 
-HAIKU_SYSTEM = """You are a fitness industry classifier. Given a company name and website text, return JSON with:
-- "modality": one of exactly: Boxing, Dance, Education, EMS, Golf, Gym, HIIT/Functional, Injury Prevention, Martial Arts, Other, Pilates, Spin/Indoor Cycle, Tanning, Wellness/Recovery, Yoga
-- "brand_tier": "SMB" (1 location), "MID" (2-10 locations), "Enterprise" (11+ locations), or "" if unknown
-- "location_count": integer if determinable, else null
-Only return JSON, no explanation."""
+GEMINI_PROMPT = """You are a fitness industry analyst. Classify this company.
+
+Return ONLY valid JSON — no markdown, no explanation:
+{{
+  "modality": "<one of: Boxing|Dance|Education|EMS|Golf|Gym|HIIT/Functional|Injury Prevention|Martial Arts|Other|Pilates|Spin/Indoor Cycle|Tanning|Wellness/Recovery|Yoga>",
+  "modality_confidence": <0-100>,
+  "brand_tier": "<SMB|MID|Enterprise|>",
+  "brand_tier_confidence": <0-100>,
+  "location_count": <integer or null>,
+  "reasoning": "<one sentence>"
+}}
+
+Rules:
+- SMB = 1 location, MID = 2-10 locations, Enterprise = 11+ locations
+- brand_tier blank ("") if you cannot determine location count
+- modality_confidence reflects how certain you are this is the right fitness category
+- brand_tier_confidence reflects how certain you are about the number of locations
+
+Company: {name}
+{context}"""
 
 
-INDUSTRY_TO_MODALITY = {
-    "health, wellness and fitness": "Gym",
-    "sports": "Gym",
-    "yoga": "Yoga",
-    "pilates": "Pilates",
-    "martial arts": "Martial Arts",
-    "dance": "Dance",
-    "physical fitness": "Gym",
-    "leisure": "Gym",
-    "recreational facilities": "Gym",
-    "fitness technology": "Gym",
-}
-
-NAV_LOCATION_KEYWORDS = [
-    "location", "locations", "studio", "studios", "gym", "gyms",
-    "find us", "find a studio", "find a gym", "our clubs", "clubs",
-    "branches", "centres", "centers",
-]
-
-
-def apollo_enrich(domain: str) -> dict:
-    """Query Apollo.io for company data."""
+def _get_vertex_token() -> str | None:
+    """Get a short-lived access token from the GCP service account key."""
+    if not SA_KEY_JSON:
+        return None
     try:
-        r = requests.post(
-            "https://api.apollo.io/v1/organizations/enrich",
-            json={"api_key": APOLLO_API_KEY, "domain": domain},
-            timeout=10,
+        import google.oauth2.service_account as sa
+        from google.auth.transport.requests import Request
+        key_data = json.loads(SA_KEY_JSON)
+        credentials = sa.Credentials.from_service_account_info(
+            key_data,
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
         )
-        if r.status_code == 200:
-            org = r.json().get("organization") or {}
+        credentials.refresh(Request())
+        return credentials.token
+    except Exception:
+        return None
+
+
+def _call_gemini(name: str, context: str) -> dict:
+    """Call Gemini 1.5 Flash via Vertex AI REST API."""
+    token = _get_vertex_token()
+    if not token:
+        return {}
+    prompt = GEMINI_PROMPT.format(name=name, context=context)
+    url = (f"https://{GCP_LOCATION}-aiplatform.googleapis.com/v1/projects/{GCP_PROJECT}"
+           f"/locations/{GCP_LOCATION}/publishers/google/models/{GEMINI_MODEL}:generateContent")
+    try:
+        r = requests.post(url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"maxOutputTokens": 250, "temperature": 0},
+            },
+            timeout=20,
+        )
+        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        m = re.search(r'\{.*\}', text, re.DOTALL)
+        if m:
+            result = json.loads(m.group())
+            mod = result.get("modality", "")
+            tier_val = result.get("brand_tier", "")
             return {
-                "industry": (org.get("industry") or "").lower(),
-                "employees": org.get("estimated_num_employees"),
-                "name": org.get("name"),
+                "modality": mod if mod in VALID_MODALITIES else "",
+                "modality_confidence": int(result.get("modality_confidence", 0)),
+                "brand_tier": tier_val if tier_val in ("SMB", "MID", "Enterprise", "") else "",
+                "brand_tier_confidence": int(result.get("brand_tier_confidence", 0)),
+                "location_count": result.get("location_count"),
+                "reasoning": result.get("reasoning", ""),
             }
     except Exception:
         pass
     return {}
 
 
-def employees_to_brand_tier(employees: int | None) -> str | None:
-    if not employees:
-        return None
-    if employees < 20:
-        return "SMB"
-    if employees < 200:
-        return "MID"
-    return "Enterprise"
-
-
-def scrape_locations_page(base_url: str) -> int | None:
-    """
-    Look for a locations/studios nav link and count addresses on that page.
-    Returns location count or None.
-    """
+def _scrape_structured(url: str) -> str:
+    """Extract structured text from a website: title + meta + headings + nav + footer."""
     try:
-        r = requests.get(base_url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
+        r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"},
+                         allow_redirects=True)
         soup = BeautifulSoup(r.text, "lxml")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
 
-        # Find nav links matching location keywords
-        location_url = None
+        parts = []
+        if soup.title:
+            parts.append(f"Title: {soup.title.string.strip()}")
+        for meta in soup.find_all("meta"):
+            name = meta.get("name", "").lower()
+            if name in ("description", "keywords"):
+                parts.append(f"Meta {name}: {meta.get('content','')}")
+        for h in soup.find_all(["h1", "h2", "h3"])[:8]:
+            t = h.get_text(strip=True)
+            if t:
+                parts.append(f"Heading: {t}")
+
+        # Nav
+        nav = soup.find("nav")
+        if nav:
+            parts.append(f"Navigation: {nav.get_text(' ', strip=True)[:300]}")
+
+        # Footer
+        footer = soup.find("footer")
+        if footer:
+            parts.append(f"Footer: {footer.get_text(' ', strip=True)[:600]}")
+
+        # Follow locations page
+        loc_url = None
         for a in soup.find_all("a", href=True):
-            text = a.get_text(strip=True).lower()
+            txt = a.get_text(strip=True).lower()
             href = a["href"]
-            if any(kw in text for kw in NAV_LOCATION_KEYWORDS):
-                if href.startswith("http"):
-                    location_url = href
-                elif href.startswith("/"):
-                    from urllib.parse import urlparse
-                    parsed = urlparse(base_url)
-                    location_url = f"{parsed.scheme}://{parsed.netloc}{href}"
+            if any(k in txt for k in NAV_LOCATION_HINTS):
+                from urllib.parse import urlparse
+                parsed = urlparse(url)
+                loc_url = href if href.startswith("http") else f"{parsed.scheme}://{parsed.netloc}{href}"
                 break
 
-        if not location_url or location_url == base_url:
-            return None
+        if loc_url and loc_url != url:
+            try:
+                r2 = requests.get(loc_url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
+                s2 = BeautifulSoup(r2.text, "lxml")
+                for tag in s2(["script","style"]):
+                    tag.decompose()
+                loc_text = s2.get_text(" ", strip=True)[:800]
+                # Count postcodes as location proxy
+                postcodes = set(re.findall(r'\b\d{4,5}\b', loc_text))
+                parts.append(f"Locations page ({len(postcodes)} postcodes found): {loc_text[:500]}")
+            except Exception:
+                pass
 
-        # Scrape the locations page
-        r2 = requests.get(location_url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
-        soup2 = BeautifulSoup(r2.text, "lxml")
-
-        # Count address blocks — look for repeated card/item structures
-        address_tags = soup2.find_all(["address"]) or []
-        if address_tags:
-            return len(address_tags)
-
-        # Count postcodes as proxy
-        text = soup2.get_text(" ")
-        postcodes = set(re.findall(r'\b[0-9]{4,5}\b', text))
-        if len(postcodes) > 1:
-            return len(postcodes)
-
-        return None
+        return "\n".join(parts)[:3000]
     except Exception:
-        return None
+        return ""
 
 
-def google_places_search(company_name: str, api_key: str) -> dict:
-    """Find Place from Text — returns business type and basic info."""
-    if not api_key:
+def _apollo_enrich(domain: str) -> dict:
+    if not APOLLO_KEY or not domain:
         return {}
     try:
+        r = requests.post("https://api.apollo.io/v1/organizations/enrich",
+            json={"api_key": APOLLO_KEY, "domain": domain}, timeout=10)
+        if r.status_code == 200:
+            org = r.json().get("organization") or {}
+            return {
+                "industry": (org.get("industry") or "").lower(),
+                "employees": org.get("estimated_num_employees"),
+            }
+    except Exception:
+        pass
+    return {}
+
+
+def _google_maps_location_count(company_name: str, domain: str) -> int | None:
+    """
+    Search Google Maps Places API for the brand — use result count as location proxy.
+    Free tier: $200/month credit (~11,700 Find Place calls free).
+    Returns approximate location count, or None if API key not set.
+    """
+    if not GOOGLE_MAPS_KEY:
+        return None
+    try:
+        # Find Place to confirm it's the right business
         r = requests.get(
             "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
             params={
                 "input": company_name,
                 "inputtype": "textquery",
-                "fields": "name,types,formatted_address",
-                "key": api_key,
+                "fields": "name,place_id,types,formatted_address",
+                "key": GOOGLE_MAPS_KEY,
             },
             timeout=8,
         )
         candidates = r.json().get("candidates", [])
-        if candidates:
-            return candidates[0]
-    except Exception:
-        pass
-    return {}
+        if not candidates:
+            return None
 
-
-PLACES_TYPE_MAP = {
-    "gym": "Gym",
-    "health": "Gym",
-    "yoga_studio": "Yoga",
-    "pilates": "Pilates",
-    "martial_arts": "Martial Arts",
-    "boxing": "Boxing",
-    "dance": "Dance",
-    "spa": "Wellness/Recovery",
-    "golf_course": "Golf",
-    "golf_club": "Golf",
-    "physiotherapist": "Injury Prevention",
-}
-
-
-def types_to_modality(types: list) -> str | None:
-    for t in (types or []):
-        t_lower = t.lower()
-        for key, mod in PLACES_TYPE_MAP.items():
-            if key in t_lower:
-                return mod
-    return None
-
-
-def classify_with_haiku(company_name: str, text_snippet: str) -> dict:
-    """Send a small structured prompt to Claude Haiku for classification."""
-    try:
-        r = requests.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 100,
-                "system": HAIKU_SYSTEM,
-                "messages": [{"role": "user", "content": f"Company: {company_name}\n\n{text_snippet[:1500]}"}],
-            },
-            timeout=15,
+        # Text Search to find all locations of this brand
+        r2 = requests.get(
+            "https://maps.googleapis.com/maps/api/place/textsearch/json",
+            params={"query": company_name, "key": GOOGLE_MAPS_KEY},
+            timeout=8,
         )
-        content = r.json().get("content", [{}])[0].get("text", "")
-        # Extract JSON from response
-        match = re.search(r'\{.*\}', content, re.DOTALL)
-        if match:
-            result = json.loads(match.group())
-            mod = result.get("modality")
-            tier_val = result.get("brand_tier")
-            loc = result.get("location_count")
-            if mod in VALID_MODALITIES:
-                return {"modality": mod, "brand_tier": tier_val or None, "location_count": loc}
+        results = r2.json().get("results", [])
+        return len(results) if results else None
     except Exception:
-        pass
-    return {}
+        return None
 
 
 def enrich(company: dict, tier1_result: dict | None = None) -> dict | None:
     """
-    Returns: {modality, brand_tier, tier, method} or None to escalate.
-    tier1_result may have modality already set but brand_tier missing.
+    Returns result if BOTH modality_confidence >= 90 AND brand_tier_confidence >= 90.
+    Otherwise returns None to escalate to Tier 3.
     """
-    name = company.get("name", "")
-    domain = company.get("domain", "") or ""
-    website = company.get("website", "") or ""
-    url = website if website.startswith("http") else (f"https://{website}" if website else f"https://{domain}" if domain else None)
+    name = (company.get("name") or "").strip()
+    domain = (company.get("domain") or "").replace("www.", "")
+    url = _url(company)
 
-    modality = tier1_result.get("modality") if tier1_result else None
-    brand_tier = None
+    # Build context string for Gemini
+    parts = []
 
-    # 1. Apollo enrichment (free to query with our key)
-    apollo = {}
-    if domain:
-        apollo = apollo_enrich(domain)
-        if not modality and apollo.get("industry"):
-            for industry_key, mod in INDUSTRY_TO_MODALITY.items():
-                if industry_key in apollo["industry"]:
-                    modality = mod
-                    break
-        if not brand_tier:
-            brand_tier = employees_to_brand_tier(apollo.get("employees"))
+    # Apollo
+    apollo = _apollo_enrich(domain)
+    if apollo.get("industry"):
+        parts.append(f"Industry (Apollo): {apollo['industry']}")
+    if apollo.get("employees"):
+        employees = apollo["employees"]
+        parts.append(f"Employees (Apollo): ~{employees}")
 
-    # 2. Locations page scrape
-    if url and not brand_tier:
-        loc_count = scrape_locations_page(url)
-        brand_tier = brand_tier_from_count(loc_count)
+    # Google Maps location count
+    maps_count = _google_maps_location_count(name, domain)
+    if maps_count is not None:
+        parts.append(f"Google Maps search results for '{name}': {maps_count} listings found")
+        if maps_count >= 11:
+            parts.append("(Google Maps: 11+ locations — likely Enterprise)")
+        elif maps_count >= 2:
+            parts.append(f"(Google Maps: {maps_count} locations — likely MID)")
+        else:
+            parts.append("(Google Maps: 1 location — likely SMB)")
 
-    # 3. Google Places (only if API key set)
-    if GOOGLE_PLACES_API_KEY and not modality:
-        places = google_places_search(name, GOOGLE_PLACES_API_KEY)
-        if not modality:
-            modality = types_to_modality(places.get("types", []))
+    # Website structured scrape
+    if url:
+        structured = _scrape_structured(url)
+        if structured:
+            parts.append(structured)
 
-    # 4. Claude Haiku with structured text (only if still missing something)
-    if url and (not modality or not brand_tier):
-        try:
-            r = requests.get(url, timeout=TIMEOUT, headers={"User-Agent": "Mozilla/5.0"})
-            soup = BeautifulSoup(r.text[:20000], "lxml")
-            for tag in soup(["script", "style", "noscript"]):
-                tag.decompose()
-            # Extract: title + meta + h1/h2 + nav text + footer snippet
-            parts = []
-            if soup.title:
-                parts.append(f"Title: {soup.title.string}")
-            for meta in soup.find_all("meta", attrs={"name": re.compile(r"description|keywords", re.I)}):
-                parts.append(f"Meta: {meta.get('content','')}")
-            for h in soup.find_all(["h1", "h2"])[:6]:
-                parts.append(f"Heading: {h.get_text(strip=True)}")
-            nav = soup.find("nav")
-            if nav:
-                parts.append(f"Nav: {nav.get_text(' ', strip=True)[:300]}")
-            footer = soup.find("footer")
-            if footer:
-                parts.append(f"Footer: {footer.get_text(' ', strip=True)[:500]}")
-            structured = "\n".join(parts)
+    if not parts:
+        return None  # No data to work with
 
-            haiku_result = classify_with_haiku(name, structured)
-            if not modality and haiku_result.get("modality"):
-                modality = haiku_result["modality"]
-            if not brand_tier and haiku_result.get("brand_tier"):
-                brand_tier = haiku_result["brand_tier"]
-            if not brand_tier and haiku_result.get("location_count"):
-                brand_tier = brand_tier_from_count(haiku_result["location_count"])
-        except Exception:
-            pass
+    context = "\n".join(parts)
 
-    if modality:
+    # Call Gemini
+    result = _call_gemini(name, context)
+
+    if not result:
+        return None
+
+    mod_conf = result.get("modality_confidence", 0)
+    tier_conf = result.get("brand_tier_confidence", 0)
+
+    # Pass if both >= 90
+    if mod_conf >= 90 and tier_conf >= 90 and result.get("modality"):
         return {
-            "modality": modality,
-            "brand_tier": brand_tier,
+            "modality": result["modality"],
+            "brand_tier": result.get("brand_tier", ""),
+            "modality_confidence": mod_conf,
+            "brand_tier_confidence": tier_conf,
+            "location_count": result.get("location_count"),
+            "reasoning": result.get("reasoning", ""),
             "tier": 2,
-            "method": f"apollo+scrape" + ("+haiku" if not brand_tier else ""),
-            "apollo": bool(apollo),
+            "method": "gemini_flash",
         }
 
-    return None
+    # Return partial for Tier 3 to build on
+    return {
+        "_partial": True,
+        "modality": result.get("modality", ""),
+        "brand_tier": result.get("brand_tier", ""),
+        "modality_confidence": mod_conf,
+        "brand_tier_confidence": tier_conf,
+        "location_count": result.get("location_count"),
+    }
