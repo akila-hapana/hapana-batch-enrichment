@@ -58,12 +58,15 @@ def _is_bot_wall(text: str) -> bool:
 
 
 def _is_binary(text: str) -> bool:
-    """Reject binary/corrupted responses — non-printable char ratio > 15%."""
+    """Reject binary/corrupted responses — non-printable or high-byte char ratio > 15%."""
     if not text:
         return False
     sample = text[:2000]
-    non_printable = sum(1 for c in sample if ord(c) < 32 and c not in "\t\n\r")
-    return (non_printable / len(sample)) > 0.15
+    suspicious = sum(
+        1 for c in sample
+        if (ord(c) < 32 and c not in "\t\n\r") or ord(c) > 127
+    )
+    return (suspicious / len(sample)) > 0.15
 
 
 def _sufficient(text: str) -> bool:
