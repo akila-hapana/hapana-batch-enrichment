@@ -32,10 +32,12 @@ STEP 1 — Determine business model (critical — this drives everything else):
   NON_FITNESS = No meaningful fitness connection (tech company, marketing agency, insurance broker, etc.)
 
 STEP 2 — Apply classification rules by model:
-  OPERATOR    → choose modality from list below + count OWNED locations for brand_tier
-  LICENSOR    → choose fitness modality, brand_tier = "" (they have no owned locations)
-  ASSOCIATION → modality = "Education", brand_tier = ""
+  OPERATOR    → choose modality + brand_tier from OWNED location count (SMB=1, MID=2-10, Enterprise=11+)
+  LICENSOR    → choose modality + brand_tier based on REACH/SCALE (global program = Enterprise, regional = MID, local = SMB)
+  ASSOCIATION → modality = "Education" + brand_tier based on scale (university/large org = Enterprise, regional = MID, local = SMB)
   NON_FITNESS → modality = "Other", brand_tier = ""
+
+⚠ brand_tier applies to ALL business models — every company has a scale. Only leave blank if you have zero information.
 
 ⚠ GOOGLE MAPS WARNING: A high Maps listing count does NOT always mean the company owns those locations.
   Instructor-licensing programs (Ujam, Zumba, Les Mills) show up in Maps at partner gyms worldwide.
@@ -57,7 +59,10 @@ Return ONLY valid JSON — no markdown, no explanation:
 Additional modality notes:
 - Personal Training includes: mobile/in-home PT, virtual coaching, "we come to you" services
 - Education includes: fitness associations, certification bodies, industry trade orgs, licensing programs, universities, colleges, schools
-- SMB = 1 owned location, MID = 2-10, Enterprise = 11+ — only applies to OPERATOR business model
+- SMB = 1 location/operator or very small reach, MID = 2-10 locations or regional reach, Enterprise = 11+ or global reach — applies to ALL business models
+- Solo personal trainer (1 person, mobile/virtual, no owned studio) → SMB
+- Global fitness licensing programs (Ujam, Zumba, Les Mills) → Enterprise
+- Universities and large associations → Enterprise
 
 Company: {name}
 {context}"""

@@ -29,10 +29,12 @@ STEP 1 — Determine business model:
   NON_FITNESS = No meaningful fitness connection
 
 STEP 2 — Apply rules by model:
-  OPERATOR    → choose modality + count OWNED locations for brand_tier
-  LICENSOR    → choose fitness modality, brand_tier = "" (no owned locations)
-  ASSOCIATION → modality = "Education", brand_tier = ""
+  OPERATOR    → choose modality + brand_tier from OWNED location count (SMB=1, MID=2-10, Enterprise=11+)
+  LICENSOR    → choose modality + brand_tier based on REACH/SCALE (global program = Enterprise, regional = MID, local = SMB)
+  ASSOCIATION → modality = "Education" + brand_tier based on scale (university/large org = Enterprise, regional = MID, local = SMB)
   NON_FITNESS → modality = "Other", brand_tier = ""
+
+⚠ brand_tier applies to ALL business models — every company has a scale. Only leave blank if you have zero information.
 
 Return ONLY valid JSON:
 {
@@ -46,8 +48,11 @@ Return ONLY valid JSON:
 }
 
 Critical rules:
-- SMB = 1 owned location, MID = 2-10, Enterprise = 11+ — only for OPERATOR type
-- brand_tier blank if you truly cannot determine owned location count
+- SMB = 1 location/operator or very small reach, MID = 2-10 or regional, Enterprise = 11+ or global — applies to ALL business models
+- Solo personal trainer (1 person, mobile/virtual, no studio) → SMB
+- Global fitness licensing programs (Ujam, Zumba, Les Mills) → Enterprise
+- Universities and large associations → Enterprise
+- Only leave brand_tier blank if you have zero information about scale
 - Be honest about confidence — only score 90+ when genuinely certain
 - If website content is unavailable, use training knowledge about the brand
 - Dance includes: dance fitness, urban dance, Zumba-style, choreographed fitness

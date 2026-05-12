@@ -226,9 +226,9 @@ def enrich(t0: dict) -> dict | None:
                 "modality_confidence": 100, "brand_tier_confidence": 100,
                 "tier": 1, "method": "known_brand"}
 
-    # --- .edu TLD → Education immediately (no brand_tier for academic institutions) ---
+    # --- .edu TLD → Education / Enterprise (universities are large institutions) ---
     if domain.endswith(".edu"):
-        return {"modality": "Education", "brand_tier": "",
+        return {"modality": "Education", "brand_tier": "Enterprise",
                 "modality_confidence": 100, "brand_tier_confidence": 100,
                 "tier": 1, "method": "edu_domain"}
 
@@ -249,11 +249,16 @@ def enrich(t0: dict) -> dict | None:
     if not modality:
         return None
 
-    # --- Education/Association → no brand_tier (they don't own fitness locations) ---
+    # --- Education → tier based on institution type ---
     if modality == "Education":
-        return {"modality": "Education", "brand_tier": "",
+        name_lower = name.lower()
+        is_university = any(k in name_lower for k in
+                            ("university", "college", "school of", "institute of", "campus"))
+        edu_tier = "Enterprise" if is_university else ""
+        edu_tier_conf = 100 if is_university else 100
+        return {"modality": "Education", "brand_tier": edu_tier,
                 "modality_confidence": mod_confidence,
-                "brand_tier_confidence": 100,
+                "brand_tier_confidence": edu_tier_conf,
                 "tier": 1, "method": "keyword_education"}
 
     # --- Brand tier from T0 location data (no scraping here) ---
