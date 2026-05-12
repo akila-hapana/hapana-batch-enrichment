@@ -58,6 +58,8 @@ KNOWN_BRANDS = {
     "genesis.com.au":         ("Gym", "Enterprise"),
     "genesisgym.com.au":      ("Gym", "Enterprise"),
     "fitstop.com.au":         ("HIIT/Functional", "Enterprise"),
+    # Dance
+    "ujamfitness.com":        ("Dance", "Enterprise"),
     # HIIT / Functional
     "f45training.com":        ("HIIT/Functional", "Enterprise"),
     "orangetheory.com":       ("HIIT/Functional", "Enterprise"),
