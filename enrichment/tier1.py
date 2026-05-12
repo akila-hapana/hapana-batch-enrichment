@@ -36,6 +36,8 @@ BRAND_WHITELIST = _load_whitelist()
 KNOWN_BRANDS = {
     # Gym
     "anytimefitness.com":     ("Gym", "Enterprise"),
+    "anytimefitness.com.au":  ("Gym", "Enterprise"),
+    "chuzefitness.com":       ("Gym", "Enterprise"),
     "planetfitness.com":      ("Gym", "Enterprise"),
     "snapfitness.com":        ("Gym", "Enterprise"),
     "goodlife.com.au":        ("Gym", "Enterprise"),
@@ -224,6 +226,12 @@ def enrich(t0: dict) -> dict | None:
                 "modality_confidence": 100, "brand_tier_confidence": 100,
                 "tier": 1, "method": "known_brand"}
 
+    # --- .edu TLD → Education immediately (no brand_tier for academic institutions) ---
+    if domain.endswith(".edu"):
+        return {"modality": "Education", "brand_tier": "",
+                "modality_confidence": 100, "brand_tier_confidence": 100,
+                "tier": 1, "method": "edu_domain"}
+
     # --- Brand whitelist (modality 100%, tier from location data) ---
     whitelist_modality = BRAND_WHITELIST.get(domain)
 
@@ -240,6 +248,13 @@ def enrich(t0: dict) -> dict | None:
 
     if not modality:
         return None
+
+    # --- Education/Association → no brand_tier (they don't own fitness locations) ---
+    if modality == "Education":
+        return {"modality": "Education", "brand_tier": "",
+                "modality_confidence": mod_confidence,
+                "brand_tier_confidence": 100,
+                "tier": 1, "method": "keyword_education"}
 
     # --- Brand tier from T0 location data (no scraping here) ---
     count = location_count if location_count is not None else maps_count
