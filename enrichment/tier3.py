@@ -25,7 +25,7 @@ HAIKU_SYSTEM = """You are a fitness industry analyst. Classify fitness companies
 STEP 1 — Determine business model:
   OPERATOR    = Owns/operates physical fitness studios or gyms at its OWN locations
   LICENSOR    = Licenses a fitness format/program to OTHER gyms — does NOT own locations
-  ASSOCIATION = Industry trade org, certification body, professional development for fitness pros
+  ASSOCIATION = Industry trade org, certification body, professional development for fitness pros — also universities, colleges, and schools (campus rec centres are fitness customers)
   NON_FITNESS = No meaningful fitness connection
 
 STEP 2 — Apply rules by model:
@@ -52,7 +52,7 @@ Critical rules:
 - If website content is unavailable, use training knowledge about the brand
 - Dance includes: dance fitness, urban dance, Zumba-style, choreographed fitness
 - Personal Training includes: mobile PT, in-home training, "we come to you", virtual coaching
-- Education includes: fitness associations, certification bodies, industry trade orgs"""
+- Education includes: fitness associations, certification bodies, industry trade orgs, universities, colleges, schools"""
 
 
 def _call_haiku(name: str, content: str) -> dict:

@@ -152,6 +152,8 @@ STRONG_KEYWORDS = {
         "fitness licensing", "licensing program fitness",
         "fitness industry association", "fitness trade association",
         "certified fitness professionals", "fitness certification body",
+        "university", "college", "campus recreation", "campus rec",
+        "student recreation", "school of",
     ],
 }
 
@@ -180,7 +182,8 @@ SIGNAL_KEYWORDS = {
     "Education":         ["fitness education", "fitness academy",
                           "personal training course", "association",
                           "federation", "certification", "licensing",
-                          "fitness professionals", "instructor program"],
+                          "fitness professionals", "instructor program",
+                          "university", "college", "campus", "academic"],
 }
 
 

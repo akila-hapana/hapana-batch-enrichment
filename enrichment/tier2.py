@@ -28,8 +28,8 @@ GEMINI_PROMPT = """You are a fitness industry analyst. Classify this company in 
 STEP 1 — Determine business model (critical — this drives everything else):
   OPERATOR    = Owns/operates physical fitness studios, gyms, or classes at its OWN locations
   LICENSOR    = Licenses a fitness format/program to OTHER gyms (e.g. Les Mills, Ujam, Zumba) — does NOT own locations
-  ASSOCIATION = Industry trade org, certification body, professional development for fitness pros (e.g. IHRSA, FBA, NASM, ACE)
-  NON_FITNESS = No meaningful fitness connection (tech company, marketing agency, insurance broker, university admin, etc.)
+  ASSOCIATION = Industry trade org, certification body, professional development for fitness pros (e.g. IHRSA, FBA, NASM, ACE) — also includes universities, colleges, and schools (campus rec centres are fitness customers)
+  NON_FITNESS = No meaningful fitness connection (tech company, marketing agency, insurance broker, etc.)
 
 STEP 2 — Apply classification rules by model:
   OPERATOR    → choose modality from list below + count OWNED locations for brand_tier
@@ -56,7 +56,7 @@ Return ONLY valid JSON — no markdown, no explanation:
 
 Additional modality notes:
 - Personal Training includes: mobile/in-home PT, virtual coaching, "we come to you" services
-- Education includes: fitness associations, certification bodies, industry trade orgs, licensing programs
+- Education includes: fitness associations, certification bodies, industry trade orgs, licensing programs, universities, colleges, schools
 - SMB = 1 owned location, MID = 2-10, Enterprise = 11+ — only applies to OPERATOR business model
 
 Company: {name}
