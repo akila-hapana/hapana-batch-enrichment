@@ -60,7 +60,7 @@ Additional modality notes:
 - Personal Training includes: mobile/in-home PT, virtual coaching, "we come to you" services
 - Education includes: fitness associations, certification bodies, industry trade orgs, licensing programs, universities, colleges, schools
 - SMB = 1 location/operator or very small reach, MID = 2-10 locations or regional reach, Enterprise = 11+ or global reach — applies to ALL business models
-- Solo personal trainer (1 person, mobile/virtual, no owned studio) → SMB
+- Personal Training brand_tier only if you have clear evidence of physical locations — leave blank for mobile/virtual/solo PTs with no fixed studio
 - Global fitness licensing programs (Ujam, Zumba, Les Mills) → Enterprise
 - Universities and large associations → Enterprise
 

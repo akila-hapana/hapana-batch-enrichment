@@ -49,7 +49,7 @@ Return ONLY valid JSON:
 
 Critical rules:
 - SMB = 1 location/operator or very small reach, MID = 2-10 or regional, Enterprise = 11+ or global — applies to ALL business models
-- Solo personal trainer (1 person, mobile/virtual, no studio) → SMB
+- Personal Training brand_tier only if you have clear evidence of physical locations — leave blank for mobile/virtual/solo PTs with no fixed studio
 - Global fitness licensing programs (Ujam, Zumba, Les Mills) → Enterprise
 - Universities and large associations → Enterprise
 - Only leave brand_tier blank if you have zero information about scale
