@@ -35,7 +35,7 @@ STEP 2 — Apply classification rules by model:
   OPERATOR    → choose modality + brand_tier from OWNED location count (SMB=1, MID=2-10, Enterprise=11+)
   LICENSOR    → choose modality + brand_tier based on REACH/SCALE (global program = Enterprise, regional = MID, local = SMB)
   ASSOCIATION → modality = "Education" + brand_tier based on scale (university/large org = Enterprise, regional = MID, local = SMB)
-  NON_FITNESS → modality = "Other", brand_tier = ""
+  NON_FITNESS → modality = "Other", brand_tier based on estimated company size (SMB/MID/Enterprise)
 
 ⚠ brand_tier applies to ALL business models — every company has a scale. Only leave blank if you have zero information.
 
