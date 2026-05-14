@@ -60,6 +60,14 @@ KNOWN_BRANDS = {
     "fitstop.com.au":         ("HIIT/Functional", "Enterprise"),
     # Dance
     "ujamfitness.com":        ("Dance", "Enterprise"),
+    # Human performance / HIIT
+    "teamexos.com":           ("HIIT/Functional", "Enterprise"),
+    # Gym chains
+    "inshapeclubs.com":       ("Gym", "Enterprise"),
+    # Personal Training / franchise
+    "fit4mom.com":            ("Personal Training", "Enterprise"),
+    # HIIT/Functional franchise
+    "core9.com.au":           ("HIIT/Functional", "Enterprise"),
     # HIIT / Functional
     "f45training.com":        ("HIIT/Functional", "Enterprise"),
     "orangetheory.com":       ("HIIT/Functional", "Enterprise"),

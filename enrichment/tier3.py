@@ -52,12 +52,13 @@ Critical rules:
 - Personal Training brand_tier only if you have clear evidence of physical locations — leave blank for mobile/virtual/solo PTs with no fixed studio
 - Global fitness licensing programs (Ujam, Zumba, Les Mills) → Enterprise
 - Universities and large associations → Enterprise
+- Industry associations with international/national reach (IDEA, NASM, ACE, canfitpro, IFPA, NFPT) → Enterprise. Regional associations → MID. Local/niche → SMB
 - Only leave brand_tier blank if you have zero information about scale
-- Be honest about confidence — only score 90+ when genuinely certain
 - If website content is unavailable, use training knowledge about the brand
 - Dance includes: dance fitness, urban dance, Zumba-style, choreographed fitness
 - Personal Training includes: mobile PT, in-home training, "we come to you", virtual coaching
-- Education includes: fitness associations, certification bodies, industry trade orgs, universities, colleges, schools"""
+- Education includes: fitness associations, certification bodies, industry trade orgs, universities, colleges, schools
+⚠ CONSISTENCY RULE: Your reasoning and your JSON MUST match. If your reasoning says "single location" → brand_tier must be SMB. If it says "3 locations" or "MID tier" → brand_tier must be MID. If it says "30+ locations" or "Enterprise" → brand_tier must be Enterprise. NEVER contradict your own reasoning in the JSON."""
 
 
 def _call_haiku(name: str, content: str) -> dict:
@@ -134,11 +135,11 @@ def enrich(t0: dict, previous: dict | None = None) -> dict:
             brand_tier = previous["brand_tier"]
             tier_conf  = previous["brand_tier_confidence"]
 
-    # Final gate
+    # Final gate — modality needs 90%, brand_tier only needs 75% (Haiku often under-scores)
     if mod_conf < 90:
         modality  = "Other"
         mod_conf  = 0
-    if tier_conf < 90:
+    if tier_conf < 75:
         brand_tier = ""
         tier_conf  = 0
 

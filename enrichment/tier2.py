@@ -63,6 +63,8 @@ Additional modality notes:
 - Personal Training brand_tier only if you have clear evidence of physical locations — leave blank for mobile/virtual/solo PTs with no fixed studio
 - Global fitness licensing programs (Ujam, Zumba, Les Mills) → Enterprise
 - Universities and large associations → Enterprise
+- Industry associations with international/national reach (IDEA, NASM, ACE, canfitpro, IFPA, NFPT) → Enterprise. Regional → MID. Local/niche → SMB
+⚠ CONSISTENCY RULE: Your reasoning and your JSON MUST match. If your reasoning says "single location" → brand_tier must be SMB. If it says "3 locations" or "MID tier" → brand_tier must be MID. If it says "30+ locations" or "Enterprise" → brand_tier must be Enterprise. NEVER contradict your own reasoning.
 
 Company: {name}
 {context}"""
